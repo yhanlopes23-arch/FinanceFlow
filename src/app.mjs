@@ -98,6 +98,70 @@ function renderDashboard(month,forecast,totals,entries){
  }
  $("balance").textContent=balanceHidden?"R$ ••••":money(summary(state).balance);
 }
+
+let settlementBudgetEdited=false;
+let suggestedPaymentPlan=null;
+function renderSettlement(){
+ const accountSelect=$("settlement-account"),budgetInput=$("settlement-budget"),out=$("settlement-items");
+ const previous=accountSelect.value;
+ accountSelect.replaceChildren();
+ for(const account of state.accounts)opt(accountSelect,account.id,account.name+" • "+money(balance(state,account.id)));
+ if(state.accounts.some(a=>a.id===previous))accountSelect.value=previous;
+ else {
+  const best=[...state.accounts].sort((a,b)=>balance(state,b.id)-balance(state,a.id))[0];
+  if(best)accountSelect.value=best.id;
+ }
+ const chosen=accountSelect.value;
+ const available=chosen?Math.max(0,balance(state,chosen)):0;
+ const overdue=overdueExpenses(state),outstanding=overdue.reduce((total,t)=>total+remainingDue(t),0);
+ $("settlement-available").textContent=money(available);
+ if(!settlementBudgetEdited)budgetInput.value=new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.min(available,outstanding)/100);
+ const text=budgetInput.value.trim();
+ let requested=0,error="";
+ try{requested=text?parseMoney(text):0;}catch(e){error=text==="0,00"||text==="0"?"":e.message;}
+ const apply=$("settlement-apply");
+ apply.disabled=true;suggestedPaymentPlan=null;out.replaceChildren();
+ if(!overdue.length){
+  out.append(el("p","Nenhuma despesa vencida e em aberto. Os pagamentos em dia continuam na aba Vencimentos.","settlement-empty"));
+  $("settlement-total").textContent="Total sugerido: "+money(0);
+  $("settlement-explain").textContent="Somente despesas com vencimento anterior à data de hoje entram no rateio.";
+  return;
+ }
+ if(available===0)error="A conta selecionada não tem saldo disponível. Escolha outra conta para calcular o rateio.";
+ if(!error&&requested>available)error="Valor maior que o saldo disponível na conta. Diminua o valor para continuar.";
+ if(!error){
+  try{suggestedPaymentPlan=proportionalPaymentPlan(state,chosen,requested);}catch(e){error=e.message;}
+ }
+ if(error)out.append(el("p",error,"settlement-warning"));
+ const plan=suggestedPaymentPlan;
+ const rows=plan?.rows?.length?plan.rows:overdue.map(t=>({id:t.id,description:t.description,date:t.date,outstanding:remainingDue(t),amount:0}));
+ for(const item of rows){
+  const row=el("div",undefined,"settlement-item"),heading=el("div",undefined,"settlement-item-name");
+  heading.append(el("span","◷","settlement-clock"),el("strong",item.description||"Despesa sem descrição"));
+  const open=el("span","Em aberto: "+money(item.outstanding),"settlement-item-open");
+  const allocated=el("span","Sugerido: "+money(item.amount),"settlement-item-allocated");
+  row.append(heading,open,allocated);out.append(row);
+ }
+ const amount=plan?.distributed||0;
+ $("settlement-total").textContent="Total sugerido: "+money(amount);
+ $("settlement-explain").textContent=outstanding===0?"Sem dívidas vencidas.":"Rateio proporcional sobre "+money(outstanding)+" em despesas vencidas, em centavos exatos. O saldo restante continua pendente.";
+ apply.disabled=Boolean(error)||!plan||!amount;
+}
+$("settlement-account").addEventListener("change",()=>{settlementBudgetEdited=false;renderSettlement();});
+$("settlement-budget").addEventListener("input",()=>{settlementBudgetEdited=true;renderSettlement();});
+$("settlement-apply").onclick=()=>{
+ const accountId=$("settlement-account").value,plan=suggestedPaymentPlan;
+ if(!plan||!plan.distributed)return say("Não há sugestão válida para aplicar.",true);
+ const count=plan.rows.filter(r=>r.amount>0).length;
+ const message="Registrar localmente "+money(plan.distributed)+" distribuídos proporcionalmente entre "+count+" despesa(s) vencida(s)?"+String.fromCharCode(10)+String.fromCharCode(10)+
+ "Os pagamentos parciais abatem o saldo em aberto. Nenhuma transferência, Pix ou boleto é pago automaticamente.";
+ if(!confirm(message))return;
+ if(commit(s=>applyProportionalPayments(s,accountId,plan.distributed))){
+  settlementBudgetEdited=false;renderSettlement();
+  say("Quitação proporcional registrada em "+count+" despesas. Consulte Vencimentos e Histórico para os saldos restantes.");
+ }
+};
+
 function buildGoalCard(goal,showActions){
  const card=el("article",undefined,"goal-card"),head=el("div",undefined,"goal-head"),percent=Math.min(100,goal.saved/goal.target*100);
  head.append(el("span",goal.name),el("span",Math.round(goal.saved/goal.target*100)+"%"));
