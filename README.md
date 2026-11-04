@@ -90,3 +90,24 @@ A data de um lançamento pendente funciona como sua data prevista. A versão atu
 ### Verificação automática
 
 `node --test tests/*.test.mjs` inclui testes de projeção, prevenção de duplicidade após liquidar, navegação por abas, indicadores necessários e sincronização dos arquivos da raiz com `public/`.
+
+## Categorização inteligente sugestiva (local)
+
+Ao registrar uma receita ou despesa, digite uma **descrição**. O FinanceFlow sugere até três categorias disponíveis no cadastro, combinando:
+
+- Palavras-chave de estabelecimentos, despesas e receitas comuns (por exemplo, supermercado, farmácia, combustível, Spotify, aluguel e salário).
+- Descrições idênticas ou muito semelhantes que você **já classificou** nos seus lançamentos anteriores, respeitando o tipo (receita/despesa).
+- Uma indicação heurística de confiança e a origem da sugestão.
+
+**A sugestão nunca substitui a escolha do usuário automaticamente.** Toque na opção desejada ou selecione uma categoria manualmente. Quando não houver correspondência confiável, o aplicativo não inventa uma classificação. As categorias padrão incluem Alimentação, Moradia, Transporte, Saúde, Educação, Lazer, Assinaturas, Compras, Serviços, Impostos e taxas, Salário, Vendas, Rendimentos e Outros. Categorias novas são disponibilizadas também a quem já usa o armazenamento local.
+
+**Privacidade:** nenhum texto financeiro é enviado a uma API de IA, banco externo ou serviço de terceiros. O mecanismo atual é de regras e aproveitamento do histórico **no próprio navegador**, não um modelo de IA generativa ou uma integração bancária. O histórico pode conter erros: confira a sugestão antes de salvá-la.
+
+### Semântica da data
+
+- **Receita**: recebimento efetivo, quando marcada como liquidada, ou data prevista de recebimento, quando pendente.
+- **Despesa**: vencimento — o último dia para pagar sem atraso. Atraso começa **no dia seguinte** ao vencimento se continuar pendente.
+- **Transferência**: data da transferência, sem impacto nas receitas ou despesas do painel.
+
+No MVP, um lançamento pendente marcado como recebido/pago mantém a data originalmente cadastrada; ainda não há um segundo campo independente de data real de liquidação. Para manter relatórios precisos, confira esse comportamento ao liquidar recebimentos fora da previsão.
+
