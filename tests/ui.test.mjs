@@ -60,3 +60,18 @@ test("edição de lançamentos expõe ações nas abas e formulário preenchido"
  assert.match(app,/form\.elements\.date\.value=tx\.date/);
  assert.match(app,/Salvar alterações/);
 });
+
+test("dashboard contém cartão funcional de quitação proporcional sem dados falsos",()=>{
+ const html=read("index.html"),app=read("src/app.mjs"),core=read("src/core.mjs");
+ for(const id of ["settlement-title","settlement-available","settlement-account","settlement-budget","settlement-items","settlement-total","settlement-apply","settlement-explain"]){
+  assert.ok(html.includes('id="'+id+'"'),"Falta "+id);
+ }
+ assert.match(app,/function renderSettlement\(\)/);
+ assert.match(app,/proportionalPaymentPlan\(state,chosen,requested\)/);
+ assert.match(app,/applyProportionalPayments\(s,accountId,plan.distributed\)/);
+ assert.match(app,/if\(!confirm\(message\)\)return/);
+ assert.match(core,/export function partialPaid\(/);
+ assert.match(core,/export function proportionalPaymentPlan\(/);
+ assert.match(core,/export function applyProportionalPayments\(/);
+ assert.doesNotMatch(html,/R\$ 1\.200,00|Assinatura Spotify Família/);
+});
