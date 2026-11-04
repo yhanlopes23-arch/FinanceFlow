@@ -1,0 +1,29 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const read=(path)=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
+test("interfaces de desenvolvimento e publicação são idênticas",()=>{
+ for(const path of ["index.html","styles.css","src/app.mjs","src/core.mjs"])
+  assert.equal(read(path),read("public/"+path),path+" divergiu da pasta publicada");
+});
+test("navegação em abas possui identificadores exclusivos e telas necessárias",()=>{
+ const html=read("index.html");
+ const ids=[...html.matchAll(/id="([^"]+)"/g)].map(x=>x[1]);
+ assert.equal(new Set(ids).size,ids.length,"IDs duplicados");
+ const pages=[...html.matchAll(/<section id="([^"]+)" data-page="\1"/g)].map(x=>x[1]);
+ for(const required of ["dashboard","agenda","movimentos","contas","metas","planejamento","relatorios","cartoes","dados"])
+  assert.ok(pages.includes(required),"Falta aba "+required);
+ const source=read("src/app.mjs");
+ assert.match(source,/page.hidden=!active/);
+ assert.match(source,/hashchange/);
+ assert.match(html,/href="#agenda"/);
+});
+test("dashboard exibe efetivos, pendentes e projeções separadamente",()=>{
+ const html=read("index.html"),js=read("src/app.mjs");
+ for(const id of ["income","income-paid","income-pending","expense","expense-paid","expense-pending","month-result","actual-result","forecast-balance","all-upcoming"]){
+   assert.ok(html.includes('id="'+id+'"'),"Falta indicador "+id);
+   if(id!=="all-upcoming")assert.ok(js.includes('$("'+id+'")'),"Indicador sem atualização: "+id);
+ }
+ assert.match(js,/monthlyForecast\(state,month\)/);
+ assert.match(js,/projectedBalance\(state,month\)/);
+});
