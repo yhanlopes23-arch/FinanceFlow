@@ -1,3 +1,4 @@
+import {SMART_CATEGORIES} from "./categorizer.mjs";
 // FinanceFlow — motor financeiro local: valores sempre em centavos inteiros.
 export const VERSION = 1;
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? `ff-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -11,7 +12,7 @@ export function parseMoney(value) {
   if (!Number.isSafeInteger(num) || num <= 0) throw Error("O valor deve ser maior que zero e caber em centavos.");
   return num;
 }
-export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:["Alimentação","Moradia","Transporte","Saúde","Educação","Lazer","Salário","Vendas","Outros"],transactions:[],budgets:{},goals:[],audit:[]});
+export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:[...SMART_CATEGORIES],transactions:[],budgets:{},goals:[],audit:[]});
 export function validateState(s) {
   if (!s || s.version !== VERSION || !Array.isArray(s.accounts) || !Array.isArray(s.transactions) || !Array.isArray(s.audit) || !Array.isArray(s.categories) || typeof s.budgets !== "object" || s.budgets === null) throw Error("Arquivo de dados incompatível.");
   if(s.goals!==undefined && (!Array.isArray(s.goals)||s.goals.some(g=>!g.id||typeof g.name!=="string"||!Number.isSafeInteger(g.target)||g.target<=0||!Number.isSafeInteger(g.saved)||g.saved<0))) throw Error("Metas inválidas.");
