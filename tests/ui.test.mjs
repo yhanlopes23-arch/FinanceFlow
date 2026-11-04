@@ -27,3 +27,13 @@ test("dashboard exibe efetivos, pendentes e projeções separadamente",()=>{
  assert.match(js,/monthlyForecast\(state,month\)/);
  assert.match(js,/projectedBalance\(state,month\)/);
 });
+
+test("sugestões de categorias dependem da descrição e são confirmadas manualmente",()=>{
+ const html=read("index.html"),js=read("src/app.mjs");
+ for(const id of ["tx-description","tx-category","category-suggestion"])
+  assert.ok(html.includes('id="'+id+'"'),"Campo não encontrado: "+id);
+ assert.match(js,/suggestCategories\(description,type,state.categories,state.transactions\)/);
+ assert.match(js,/button.addEventListener\("click"/);
+ assert.match(js,/\$\("tx-category"\)\.value=suggestion\.category/);
+ assert.match(js,/\$\("tx-description"\)\.addEventListener\("input"/);
+});
