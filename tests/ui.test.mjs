@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=(path)=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 test("interfaces de desenvolvimento e publicação são idênticas",()=>{
- for(const path of ["index.html","styles.css","src/app.mjs","src/core.mjs"])
+ for(const path of ["index.html","styles.css","src/app.mjs","src/core.mjs","src/categorizer.mjs"])
   assert.equal(read(path),read("public/"+path),path+" divergiu da pasta publicada");
 });
 test("navegação em abas possui identificadores exclusivos e telas necessárias",()=>{
