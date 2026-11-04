@@ -50,3 +50,13 @@ test("edição usa o mesmo formulário, preserva versão e oferece ação no his
  assert.match(code,/tx\.revision\?\?0/);
  assert.match(code,/function describeAudit\(event\)/);
 });
+
+test("edição de lançamentos expõe ações nas abas e formulário preenchido",()=>{
+ const html=read("index.html"),app=read("src/app.mjs");
+ for(const id of ["tx-edit-hint","tx-save","tx-title"])assert.ok(html.includes('id="'+id+'"'));
+ assert.match(app,/function openEditTransaction\(id\)/);
+ assert.match(app,/edit\.onclick=\(\)=>openEditTransaction\(t\.id\)/);
+ assert.match(app,/editTransaction\(s,editingId,changes,editingRevision\)/);
+ assert.match(app,/form\.elements\.date\.value=tx\.date/);
+ assert.match(app,/Salvar alterações/);
+});
