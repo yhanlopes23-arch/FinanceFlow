@@ -1,16 +1,26 @@
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance} from "./core.mjs";
+import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
 try {const raw=localStorage.getItem(KEY);state=raw?validateState(JSON.parse(raw)):initial();} catch(e){state=initial();alert("Não foi possível ler os dados salvos. Faça uma cópia do armazenamento antes de registrar novos lançamentos. "+e.message);}
+function ensureCategories(data){data.categories=[...new Set([...data.categories,...SMART_CATEGORIES])];}
+ensureCategories(state);
 const monthDefault=today().slice(0,7);$("month").value=monthDefault;
 function say(message,error=false){const n=$("notice");n.textContent=message;n.classList.toggle("error",error);}
 function commit(fn){const clone=structuredClone(state);try{fn(clone);validateState(clone);localStorage.setItem(KEY,JSON.stringify(clone));state=clone;render();say("Alterações salvas neste navegador.");}catch(e){say(e.message,true);}}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node;}
 function opt(select,value,label){const o=new Option(label,value);select.add(o);}
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta removida";}
-function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){const s=$(id),v=s.value;s.replaceChildren();state.categories.forEach(c=>opt(s,c,c));if([...s.options].some(o=>o.value===v))s.value=v;}}
+function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){
+ const s=$(id),v=s.value;s.replaceChildren();
+ if(id==="tx-category")opt(s,"","Escolha uma categoria");
+ state.categories.forEach(c=>opt(s,c,c));
+ if([...s.options].some(o=>o.value===v))s.value=v;
+ else if(id==="tx-category")s.value="";
+}}
 function render(){
+ ensureCategories(state);
  fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);const pendingElement=$("pending");if(pendingElement)pendingElement.textContent=sum.pending;
  const month=$("month").value||monthDefault;
  const forecast=monthlyForecast(state,month);
@@ -31,7 +41,7 @@ function render(){
  renderDashboard(month,forecast,totals,entries);
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
- for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");stateCell.append(el("span",t.status==="paid"?"Liquidado":"Pendente","pill "+t.status));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
+ for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
  if(t.status==="pending"){const b=el("button","Liquidar","secondary rowaction");b.onclick=()=>commit(s=>settle(s,t.id));action.append(b);}
  const rev=el("button","Estornar","danger rowaction");rev.onclick=()=>{if(confirm("Estornar este lançamento? A operação ficará registrada na auditoria."))commit(s=>reverse(s,t.id));};action.append(rev);tr.append(action);body.append(tr);}
  const accounts=$("accounts");accounts.replaceChildren();for(const a of state.accounts){const card=el("article",undefined,"accountcard");card.append(el("span",a.name),el("strong",money(balance(state,a.id))),el("p","Saldo inicial: "+money(a.opening),"muted"));accounts.append(card);}
@@ -57,7 +67,7 @@ function renderDashboard(month,forecast,totals,entries){
   const [y,m,d]=t.date.split("-").map(Number);
   day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
   const details=el("div");
-  details.append(el("span",t.type==="expense"?"A PAGAR":"A RECEBER","pill pending"),el("div",t.description||t.category,"due-name"),el("div",t.category+" • "+accountName(t.accountId),"due-sub"));
+  const info=paymentDateStatus(t);details.append(el("span",info.label,"pill "+info.kind),el("div",t.description||t.category,"due-name"),el("div",(t.type==="income"?"Receber em ":"Pagar até ")+t.date.split("-").reverse().join("/")+" • "+t.category+" • "+accountName(t.accountId),"due-sub"));
   const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
   const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
   btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
@@ -92,8 +102,53 @@ function buildGoalCard(goal,showActions){
 }
 
 function dialog(id){const d=$(id);d.showModal();d.querySelector("input:not([type=hidden])")?.focus();}
-function syncType(){const transfer=$("tx-type").value==="transfer";$("tx-to-wrap").hidden=!transfer;$("tx-category-wrap").hidden=transfer;}
-$("tx-type").addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>{if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);$("tx-form").reset();$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");};
+
+function showCategorySuggestion(){
+ const area=$("category-suggestion"),type=$("tx-type").value,description=$("tx-description").value;
+ area.replaceChildren();
+ if(type==="transfer"||description.trim().length<3){area.hidden=true;return;}
+ area.hidden=false;
+ const suggested=suggestCategories(description,type,state.categories,state.transactions);
+ const heading=el("strong","Sugestões de categoria (análise local)","suggestion-heading");
+ area.append(heading);
+ if(!suggested.length){
+  area.append(el("p","Nenhuma correspondência confiável. Selecione a categoria manualmente.","suggestion-empty"));
+  return;
+ }
+ const group=el("div",undefined,"suggestion-buttons");
+ for(const suggestion of suggested){
+  const button=el("button",undefined,"suggestion-button");
+  button.type="button";
+  button.title=suggestion.reason;
+  button.append(el("span",suggestion.category),el("small",suggestion.confidence+" • "+suggestion.reason));
+  button.addEventListener("click",()=>{
+   $("tx-category").value=suggestion.category;
+   area.querySelectorAll(".suggestion-button").forEach(b=>b.classList.remove("chosen"));
+   button.classList.add("chosen");
+   const message=area.querySelector(".suggestion-feedback");
+   if(message)message.textContent="Categoria selecionada: "+suggestion.category+". Você pode alterar manualmente.";
+   else area.append(el("p","Categoria selecionada: "+suggestion.category+". Você pode alterar manualmente.","suggestion-feedback"));
+  });
+  group.append(button);
+ }
+ area.append(group);
+ area.append(el("p","Sugestões, não classificações automáticas. A descrição não é enviada a servidores externos.","suggestion-note"));
+}
+$("tx-description").addEventListener("input",showCategorySuggestion);
+$("tx-category").addEventListener("change",()=>{
+ const feedback=$("category-suggestion").querySelector(".suggestion-feedback");
+ if(feedback)feedback.textContent="Categoria escolhida manualmente: "+$("tx-category").value;
+ $("category-suggestion").querySelectorAll(".suggestion-button").forEach(b=>b.classList.remove("chosen"));
+});
+function syncType(){
+ const type=$("tx-type").value,status=$("tx-form").elements.status.value,transfer=type==="transfer";
+ $("tx-to-wrap").hidden=!transfer;$("tx-category-wrap").hidden=transfer;
+ $("tx-category").required=!transfer;
+ $("tx-date-label").textContent=dateFieldLabel(type,status);
+ $("tx-date-hint").textContent=dateFieldHint(type,status);
+ showCategorySuggestion();
+}
+$("tx-type").addEventListener("change",syncType);$("tx-form").elements.status.addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>{if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);$("tx-form").reset();$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");};
 $("open-account").onclick=()=>{$("account-form").reset();dialog("account-dialog");};
 document.querySelectorAll(".cancel").forEach(b=>b.onclick=()=>b.closest("dialog").close());
 $("tx-form").onsubmit=e=>{e.preventDefault();const f=e.currentTarget,p=Object.fromEntries(new FormData(f));try{const amount=parseMoney(p.amount);let done=false;commit(s=>{addTransaction(s,{...p,amount});done=true;});if(done&&$("notice").className!=="error")$("tx-dialog").close();}catch(err){say(err.message,true);}};
@@ -103,7 +158,7 @@ for(const id of ["month","search","filter-type","filter-status"])$(id).addEventL
 function download(name,content,mime){const blob=new Blob([content],{type:mime});const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 $("export-json").onclick=()=>download("financeflow-backup-"+today()+".json",exportData(state),"application/json");
 function csvCell(value){return '"'+String(value??"").replaceAll('"','""').replace(/^[=+\-@]/,"'$&")+'"';}
-$("export-csv").onclick=()=>{const rows=[["ID","Tipo","Descrição","Categoria","Valor (BRL)","Data","Status","Conta origem","Conta destino","Estornado"],...state.transactions.map(t=>[t.id,t.type,t.description,t.category,(t.amount/100).toFixed(2).replace(".",","),t.date,t.status,accountName(t.accountId),t.toAccountId?accountName(t.toAccountId):"",t.reversedBy?"Sim":"Não"])];download("financeflow-lancamentos-"+today()+".csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");};
+$("export-csv").onclick=()=>{const rows=[["ID","Tipo","Descrição","Categoria","Valor (BRL)","Data de recebimento ou vencimento","Status","Conta origem","Conta destino","Estornado"],...state.transactions.map(t=>[t.id,t.type,t.description,t.category,(t.amount/100).toFixed(2).replace(".",","),t.date,t.status,accountName(t.accountId),t.toAccountId?accountName(t.toAccountId):"",t.reversedBy?"Sim":"Não"])];download("financeflow-lancamentos-"+today()+".csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");};
 $("import-json").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>5_000_000)throw Error("Backup maior que 5 MB.");const next=importData(await file.text());if(!confirm("Substituir TODOS os dados deste navegador pelo backup selecionado?"))return;localStorage.setItem(KEY,JSON.stringify(next));state=next;render();say("Backup restaurado.");}catch(err){say("Não foi possível restaurar: "+err.message,true);}finally{e.target.value="";}};
 $("clear-data").onclick=()=>{if(prompt('Digite APAGAR para excluir definitivamente os dados deste navegador:')!=="APAGAR")return;const fresh=initial();try{localStorage.setItem(KEY,JSON.stringify(fresh));state=fresh;render();say("Dados locais apagados.");}catch(e){say(e.message,true);}};
 
