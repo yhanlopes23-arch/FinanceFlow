@@ -1,7 +1,8 @@
+import {SMART_CATEGORIES} from "./categorizer.mjs";
 // FinanceFlow — motor financeiro local: valores sempre em centavos inteiros.
 export const VERSION = 1;
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? `ff-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-export const today = () => new Date().toLocaleDateString("en-CA");
+export const today = () => {const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
 export const money = cents => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(cents/100);
 export function parseMoney(value) {
   const text = String(value ?? "").trim().replace(/^R\$\s*/i,"").replace(/\s/g,"");
@@ -11,7 +12,7 @@ export function parseMoney(value) {
   if (!Number.isSafeInteger(num) || num <= 0) throw Error("O valor deve ser maior que zero e caber em centavos.");
   return num;
 }
-export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:["Alimentação","Moradia","Transporte","Saúde","Educação","Lazer","Salário","Vendas","Outros"],transactions:[],budgets:{},goals:[],audit:[]});
+export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:[...SMART_CATEGORIES],transactions:[],budgets:{},goals:[],audit:[]});
 export function validateState(s) {
   if (!s || s.version !== VERSION || !Array.isArray(s.accounts) || !Array.isArray(s.transactions) || !Array.isArray(s.audit) || !Array.isArray(s.categories) || typeof s.budgets !== "object" || s.budgets === null) throw Error("Arquivo de dados incompatível.");
   if(s.goals!==undefined && (!Array.isArray(s.goals)||s.goals.some(g=>!g.id||typeof g.name!=="string"||!Number.isSafeInteger(g.target)||g.target<=0||!Number.isSafeInteger(g.saved)||g.saved<0))) throw Error("Metas inválidas.");
@@ -99,4 +100,36 @@ export function projectedBalance(s,month){
  const balanceNow=summary(s).balance;
  const pendingUntilMonth=s.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.date.slice(0,7)<=month);
  return balanceNow+pendingUntilMonth.reduce((amount,t)=>amount+(t.type==="income"?t.amount:t.type==="expense"?-t.amount:0),0);
+}
+
+/**
+ * A data do lançamento representa:
+ * - Receita: dia do recebimento (se liquidada) ou data prevista de entrada.
+ * - Despesa: vencimento, o ÚLTIMO dia em que o pagamento pode ser feito em dia.
+ * - Transferência: data programada/realizada entre contas.
+ * A liquidação de um registro não altera esta data.
+ */
+export function dateFieldLabel(type,status="pending"){
+ if(type==="income")return status==="paid"?"Data do recebimento":"Previsão de recebimento";
+ if(type==="expense")return "Vencimento (último dia para pagar)";
+ if(type==="transfer")return status==="paid"?"Data da transferência":"Data prevista da transferência";
+ throw Error("Tipo de lançamento inválido.");
+}
+export function dateFieldHint(type,status="pending"){
+ if(type==="income")return status==="paid"
+  ?"Informe a data em que o valor entrou na conta."
+  :"Informe o dia em que o valor deverá entrar na conta.";
+ if(type==="expense")return "Esta é a data limite para pagar em dia. Só ficará em atraso a partir do dia seguinte, se ainda estiver pendente.";
+ if(type==="transfer")return "Data da movimentação entre contas (não conta como receita nem despesa).";
+ throw Error("Tipo de lançamento inválido.");
+}
+/** Avaliação por datas locais YYYY-MM-DD; o próprio dia do vencimento nunca é atraso. */
+export function paymentDateStatus(tx,reference=today()){
+ if(!tx || !["income","expense","transfer"].includes(tx.type) || !["paid","pending"].includes(tx.status) || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date) || !/^\d{4}-\d{2}-\d{2}$/.test(reference))throw Error("Dados de vencimento inválidos.");
+ if(tx.reversedBy)return {label:"Estornado",kind:"neutral"};
+ if(tx.status==="paid")return {label:tx.type==="income"?"Recebido":tx.type==="expense"?"Pago":"Transferido",kind:"success"};
+ if(tx.type==="transfer")return {label:"Transferência pendente",kind:"pending"};
+ if(tx.date<reference)return {label:tx.type==="income"?"Recebimento atrasado":"Pagamento atrasado",kind:"overdue"};
+ if(tx.date===reference)return {label:tx.type==="income"?"Receber hoje":"Último dia para pagar",kind:"today"};
+ return {label:tx.type==="income"?"A receber":"A pagar",kind:"pending"};
 }
