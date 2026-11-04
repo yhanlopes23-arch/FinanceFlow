@@ -1,0 +1,10 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {initial,parseMoney,addAccount,addTransaction,balance,summary,reverse,settle,categoryTotals,exportData,importData} from "../src/core.mjs";
+const add=(s,p)=>addTransaction(s,{date:"2026-11-04",status:"paid",category:"Alimentação",description:"Teste",...p});
+test("converte moeda brasileira exatamente",()=>{assert.equal(parseMoney("1.234,56"),123456);assert.equal(parseMoney("0,01"),1);assert.throws(()=>parseMoney("1,999"));assert.throws(()=>parseMoney("-2"));});
+test("transferência mantém saldo consolidado e não gera receita",()=>{const s=initial();s.accounts[0].opening=100000;const b=addAccount(s,"Poupança",30000);add(s,{type:"transfer",amount:20000,accountId:s.accounts[0].id,toAccountId:b.id});assert.equal(balance(s,s.accounts[0].id),80000);assert.equal(balance(s,b.id),50000);assert.equal(summary(s).balance,130000);assert.equal(summary(s).income,0);assert.equal(summary(s).expense,0);});
+test("pendências não afetam saldos até liquidação",()=>{const s=initial();const t=add(s,{type:"expense",amount:5000,accountId:s.accounts[0].id,status:"pending"});assert.equal(summary(s).balance,0);settle(s,t.id);assert.equal(summary(s).expense,5000);assert.equal(summary(s).balance,-5000);});
+test("estorno preserva histórico e neutraliza saldo",()=>{const s=initial();const t=add(s,{type:"income",amount:3000,accountId:s.accounts[0].id});reverse(s,t.id);assert.equal(s.transactions.length,1);assert.equal(summary(s).income,0);assert.equal(summary(s).balance,0);assert.throws(()=>reverse(s,t.id));});
+test("categoria mensal e cópia do backup",()=>{const s=initial();add(s,{type:"expense",amount:1234,accountId:s.accounts[0].id});assert.equal(categoryTotals(s,"2026-11").Alimentação,1234);const restored=importData(exportData(s));assert.deepEqual(restored,s);});
+test("rejeita backup inválido",()=>{assert.throws(()=>importData('{"version":200}'));});
