@@ -15,5 +15,6 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Verificar sintaxe do app
         run: |
+          node --check src/categorizer.mjs
           node --check src/core.mjs
           node --check src/app.mjs
