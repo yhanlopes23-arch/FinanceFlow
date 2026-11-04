@@ -25,24 +25,52 @@ export function validateState(s) {
   for (const t of s.transactions) {
     if (!t.id || txids.has(t.id) || !["income","expense","transfer"].includes(t.type) || !Number.isSafeInteger(t.amount) || t.amount<=0 || !ids.has(t.accountId) || (t.type==="transfer" && (!ids.has(t.toAccountId) || t.toAccountId===t.accountId)) || !/^\d{4}-\d{2}-\d{2}$/.test(t.date) || !["paid","pending"].includes(t.status)) throw Error("Lançamento inválido.");
     txids.add(t.id);
+    if(t.payments!==undefined){
+      if(t.type!=="expense"||!Array.isArray(t.payments))throw Error("Histórico de pagamentos inválido.");
+      const paymentIds=new Set();let allocated=0;
+      for(const p of t.payments){
+        if(!p.id||paymentIds.has(p.id)||!ids.has(p.accountId)||!Number.isSafeInteger(p.amount)||p.amount<=0||!/^\d{4}-\d{2}-\d{2}$/.test(p.date))throw Error("Pagamento parcial inválido.");
+        paymentIds.add(p.id);allocated+=p.amount;
+        if(!Number.isSafeInteger(allocated))throw Error("Total de pagamentos inválido.");
+      }
+      if(allocated>t.amount)throw Error("Pagamentos excedem o valor da despesa.");
+    }
   }
   for(const v of Object.values(s.budgets)) if(!Number.isSafeInteger(v)||v<0) throw Error("Orçamento inválido.");
   if (s.goals !== undefined) {if(!Array.isArray(s.goals)) throw Error("Metas inválidas.");for(const g of s.goals){if(!g.id || typeof g.name!=="string" || g.name.length>80 || !Number.isSafeInteger(g.target) || g.target<=0 || !Number.isSafeInteger(g.saved) || g.saved<0 || (g.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(g.deadline)))throw Error("Meta inválida.");}}
   return s;
 }
-export function balance(s,accountId) {
-  const a=s.accounts.find(a=>a.id===accountId); if(!a) throw Error("Conta não encontrada.");
-  return s.transactions.reduce((total,t)=> {
-    if(t.status!=="paid" || t.reversedBy) return total;
-    if(t.type==="income" && t.accountId===accountId) return total+t.amount;
-    if((t.type==="expense"||t.type==="transfer") && t.accountId===accountId) return total-t.amount;
-    if(t.type==="transfer" && t.toAccountId===accountId) return total+t.amount;
-    return total;
-  },a.opening);
+
+/** Total já pago em parcelas registradas na despesa; compatível com lançamentos antigos. */
+export function partialPaid(t){return (t.payments||[]).reduce((n,p)=>n+p.amount,0);}
+export function remainingDue(t){
+ if(t.reversedBy||t.status!=="pending")return 0;
+ return t.type==="expense"?Math.max(0,t.amount-partialPaid(t)):t.type==="income"?t.amount:0;
 }
-export function summary(s) {
-  const actual=s.transactions.filter(t=>t.status==="paid"&&!t.reversedBy);
-  return {balance:s.accounts.reduce((n,a)=>n+balance(s,a.id),0),income:actual.filter(t=>t.type==="income").reduce((n,t)=>n+t.amount,0),expense:actual.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0),pending:s.transactions.filter(t=>t.status==="pending"&&!t.reversedBy).length};
+export function balance(s,accountId){
+ const a=s.accounts.find(a=>a.id===accountId);if(!a)throw Error("Conta não encontrada.");
+ let total=a.opening;
+ for(const t of s.transactions){
+   if(t.reversedBy)continue;
+   if(t.type==="expense"){
+     for(const p of t.payments||[])if(p.accountId===accountId)total-=p.amount;
+     if(t.status==="paid"&&t.accountId===accountId)total-=t.amount-partialPaid(t);
+   }else if(t.status==="paid"&&t.type==="income"&&t.accountId===accountId)total+=t.amount;
+   else if(t.status==="paid"&&t.type==="transfer"){
+     if(t.accountId===accountId)total-=t.amount;
+     if(t.toAccountId===accountId)total+=t.amount;
+   }
+ }
+ return total;
+}
+export function summary(s){
+ const active=s.transactions.filter(t=>!t.reversedBy);
+ return {
+  balance:s.accounts.reduce((n,a)=>n+balance(s,a.id),0),
+  income:active.filter(t=>t.type==="income"&&t.status==="paid").reduce((n,t)=>n+t.amount,0),
+  expense:active.filter(t=>t.type==="expense").reduce((n,t)=>n+(t.status==="paid"?t.amount:partialPaid(t)),0),
+  pending:active.filter(t=>t.status==="pending"&& (t.type!=="expense"||remainingDue(t)>0)).length
+ };
 }
 export function record(s,action,details){s.audit.unshift({id:uid(),date:new Date().toISOString(),action,details});s.audit=s.audit.slice(0,1000);}
 export function addAccount(s,name,opening=0){name=String(name).trim();if(!name||name.length>80)throw Error("Nome da conta inválido.");if(!Number.isSafeInteger(opening))throw Error("Saldo inicial inválido."); const a={id:uid(),name,opening};s.accounts.push(a);record(s,"account.create",name);return a;}
@@ -83,6 +111,9 @@ export function editTransaction(s,id,changes,expectedRevision=null) {
     ||(next.type==="transfer"&&(!s.accounts.some(a=>a.id===next.toAccountId)||next.toAccountId===next.accountId))
     ||!next.description||next.description.length>180
     ||!next.category||next.category.length>80)throw Error("Confira valor, data, conta, descrição e categoria.");
+ const alreadyPaid=partialPaid(tx);
+ if(alreadyPaid>0&&(next.type!=="expense"||next.amount<alreadyPaid))
+  throw Error("Esta despesa já recebeu pagamentos parciais. Mantenha o tipo Despesa e um valor não inferior ao total pago.");
  const modified=editable.some(key=>before[key]!==next[key]);
  if(!modified)return tx;
  Object.assign(tx,next);
@@ -94,7 +125,7 @@ export function editTransaction(s,id,changes,expectedRevision=null) {
 export function reverse(s,id){const t=s.transactions.find(t=>t.id===id);if(!t||t.reversedBy)throw Error("Lançamento já estornado ou inexistente.");t.reversedBy=uid();record(s,"transaction.reverse",id);return t;}
 export function settle(s,id){const t=s.transactions.find(t=>t.id===id);if(!t||t.reversedBy||t.status!=="pending")throw Error("Pendente não encontrado.");t.status="paid";record(s,"transaction.settle",id);}
 export function monthRows(s,month) {return s.transactions.filter(t=>!t.reversedBy&&t.date.startsWith(month));}
-export function categoryTotals(s,month){const out={};for(const t of monthRows(s,month)){if(t.type==="expense"&&t.status==="paid")out[t.category]=(out[t.category]||0)+t.amount;}return out;}
+export function categoryTotals(s,month){const out={};for(const t of monthRows(s,month)){if(t.type==="expense")out[t.category]=(out[t.category]||0)+(t.status==="paid"?t.amount:partialPaid(t));}return out;}
 export function exportData(s){validateState(s);return JSON.stringify(s,null,2);}
 export function importData(raw){const s=validateState(JSON.parse(raw));return structuredClone(s);}
 
@@ -125,8 +156,11 @@ export function monthlyForecast(s,month){
  const expenseCategories={};
  for(const t of rows){
   const key=(t.status==="paid"?"paid":"pending")+(t.type==="income"?"Income":"Expense");
-  totals[key]+=t.amount;
-  if(t.type==="expense")expenseCategories[t.category]=(expenseCategories[t.category]||0)+t.amount;
+  if(t.type==="expense"){
+   totals.paidExpense+=t.status==="paid"?t.amount:partialPaid(t);
+   totals.pendingExpense+=remainingDue(t);
+   expenseCategories[t.category]=(expenseCategories[t.category]||0)+t.amount;
+  }else totals[key]+=t.amount;
  }
  const expectedIncome=totals.paidIncome+totals.pendingIncome;
  const expectedExpense=totals.paidExpense+totals.pendingExpense;
@@ -137,7 +171,7 @@ export function projectedBalance(s,month){
  if(!/^\d{4}-\d{2}$/.test(month))throw Error("Mês de referência inválido.");
  const balanceNow=summary(s).balance;
  const pendingUntilMonth=s.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.date.slice(0,7)<=month);
- return balanceNow+pendingUntilMonth.reduce((amount,t)=>amount+(t.type==="income"?t.amount:t.type==="expense"?-t.amount:0),0);
+ return balanceNow+pendingUntilMonth.reduce((amount,t)=>amount+(t.type==="income"?t.amount:t.type==="expense"?-remainingDue(t):0),0);
 }
 
 /**
@@ -170,4 +204,62 @@ export function paymentDateStatus(tx,reference=today()){
  if(tx.date<reference)return {label:tx.type==="income"?"Recebimento atrasado":"Pagamento atrasado",kind:"overdue"};
  if(tx.date===reference)return {label:tx.type==="income"?"Receber hoje":"Último dia para pagar",kind:"today"};
  return {label:tx.type==="income"?"A receber":"A pagar",kind:"pending"};
+}
+
+/** Lista despesas com vencimento anterior a hoje, pendentes e não estornadas. */
+export function overdueExpenses(s,reference=today()){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(reference))throw Error("Data de referência inválida.");
+ return s.transactions.filter(t=>t.type==="expense"&&t.status==="pending"&&!t.reversedBy&&t.date<reference&&remainingDue(t)>0)
+ .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+}
+/**
+ * Distribui recursos entre TODAS as despesas vencidas segundo seus saldos em aberto.
+ * Utiliza BigInt para manter centavos exatos e o método dos maiores restos
+ * para distribuir o centavo residual, sem ultrapassar qualquer dívida.
+ */
+export function proportionalPaymentPlan(s,accountId,budget,reference=today()){
+ if(!s.accounts.some(a=>a.id===accountId))throw Error("Selecione uma conta válida.");
+ if(!Number.isSafeInteger(budget)||budget<0)throw Error("Valor disponível inválido.");
+ const available=Math.max(0,balance(s,accountId));
+ if(budget>available)throw Error("Valor informado excede o saldo da conta selecionada.");
+ const debts=overdueExpenses(s,reference);
+ const outstanding=debts.reduce((n,t)=>n+remainingDue(t),0);
+ if(!Number.isSafeInteger(outstanding))throw Error("Dívidas excedem o limite de cálculo.");
+ const distributed=Math.min(budget,outstanding);
+ if(!outstanding||!distributed)return {accountId,available,outstanding,distributed:0,rows:[]};
+ const total=BigInt(outstanding),cents=BigInt(distributed);
+ let rows=debts.map(t=>{
+  const due=remainingDue(t),product=cents*BigInt(due);
+  const base=Number(product/total);
+  const remainder=product%total;
+  return {id:t.id,description:t.description,date:t.date,category:t.category,outstanding:due,amount:base,remainder};
+ });
+ let leftovers=distributed-rows.reduce((n,r)=>n+r.amount,0);
+ const order=[...rows].sort((a,b)=>{
+  if(a.remainder>b.remainder)return -1;
+  if(a.remainder<b.remainder)return 1;
+  return a.date.localeCompare(b.date)||a.id.localeCompare(b.id);
+ });
+ for(const row of order){if(!leftovers)break;if(row.amount<row.outstanding){row.amount++;leftovers--;}}
+ if(leftovers!==0)throw Error("Não foi possível distribuir os centavos com precisão.");
+ rows=rows.map(({remainder,...row})=>row);
+ return {accountId,available,outstanding,distributed,rows};
+}
+/** Registra pagamento local parcial/total, sem executar transferência bancária. */
+export function applyProportionalPayments(s,accountId,budget,reference=today()){
+ const plan=proportionalPaymentPlan(s,accountId,budget,reference);
+ if(plan.distributed<=0)throw Error("Não há valor disponível ou despesas vencidas para quitar.");
+ for(const row of plan.rows){
+  if(!row.amount)continue;
+  const tx=s.transactions.find(t=>t.id===row.id);
+  if(!tx||tx.reversedBy||tx.type!=="expense"||tx.status!=="pending"||remainingDue(tx)<row.amount)
+   throw Error("Despesa foi alterada; atualize a sugestão.");
+  tx.payments??=[];
+  tx.payments.push({id:uid(),accountId,amount:row.amount,date:reference});
+  tx.updatedAt=new Date().toISOString();
+  tx.revision=(tx.revision??0)+1;
+  if(remainingDue(tx)===0)tx.status="paid";
+ }
+ record(s,"expenses.proportional-payment",JSON.stringify({accountId,date:reference,total:plan.distributed,allocations:plan.rows.filter(r=>r.amount).map(({id,amount})=>({id,amount}))}));
+ return plan;
 }
