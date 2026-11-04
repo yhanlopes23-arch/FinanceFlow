@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {initial,parseMoney,addAccount,addTransaction,balance,summary,reverse,settle,categoryTotals,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,today} from "../src/core.mjs";
+import {initial,parseMoney,addAccount,addTransaction,editTransaction,balance,summary,reverse,settle,categoryTotals,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,today} from "../src/core.mjs";
 const add=(s,p)=>addTransaction(s,{date:"2026-11-04",status:"paid",category:"Alimentação",description:"Teste",...p});
 test("converte moeda brasileira exatamente",()=>{assert.equal(parseMoney("1.234,56"),123456);assert.equal(parseMoney("0,01"),1);assert.throws(()=>parseMoney("1,999"));assert.throws(()=>parseMoney("-2"));});
 test("transferência mantém saldo consolidado e não gera receita",()=>{const s=initial();s.accounts[0].opening=100000;const b=addAccount(s,"Poupança",30000);add(s,{type:"transfer",amount:20000,accountId:s.accounts[0].id,toAccountId:b.id});assert.equal(balance(s,s.accounts[0].id),80000);assert.equal(balance(s,b.id),50000);assert.equal(summary(s).balance,130000);assert.equal(summary(s).income,0);assert.equal(summary(s).expense,0);});
@@ -59,4 +59,58 @@ test("vencimentos usam data limite e receitas usam data prevista ou efetiva",()=
  assert.equal(paymentDateStatus(inc,"2026-11-10").label,"Receber hoje");
  assert.equal(paymentDateStatus(inc,"2026-11-11").label,"Recebimento atrasado");
  assert.match(today(),/^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("edição mantém ID, salva auditoria e recalcula dashboard e projeções",()=>{
+ const s=initial(), account=s.accounts[0].id;
+ const tx=add(s,{type:"expense",amount:8000,accountId:account,status:"pending",date:"2026-11-12",description:"Mercado",category:"Alimentação"});
+ const id=tx.id,createdAt=tx.createdAt;
+ const before=monthlyForecast(s,"2026-11");
+ assert.equal(before.pendingExpense,8000);
+ const edited=editTransaction(s,id,{type:"expense",amount:10000,date:"2026-12-05",status:"paid",accountId:account,toAccountId:null,category:"Moradia",description:"Conta de água"},0);
+ assert.equal(edited.id,id);
+ assert.equal(edited.createdAt,createdAt);
+ assert.equal(edited.revision,1);
+ assert.equal(summary(s).balance,-10000);
+ assert.equal(monthlyForecast(s,"2026-11").expectedExpense,0);
+ assert.equal(monthlyForecast(s,"2026-12").paidExpense,10000);
+ assert.equal(s.transactions.length,1);
+ const record=s.audit.find(e=>e.action==="transaction.edit");
+ const changes=JSON.parse(record.details);
+ assert.equal(changes.before.amount,8000);
+ assert.equal(changes.after.amount,10000);
+ assert.equal(changes.before.status,"pending");
+ assert.equal(changes.after.status,"paid");
+ assert.equal(changes.before.date,"2026-11-12");
+ assert.equal(changes.after.date,"2026-12-05");
+ const count=s.audit.length;
+ editTransaction(s,id,{type:"expense",amount:10000,date:"2026-12-05",status:"paid",accountId:account,toAccountId:null,category:"Moradia",description:"Conta de água"},1);
+ assert.equal(s.audit.length,count,"edição sem alterações não gera nova auditoria");
+});
+test("edição de transferências ajusta contas sem produzir receitas ou despesas",()=>{
+ const s=initial(),a=s.accounts[0],b=addAccount(s,"Poupança"),c=addAccount(s,"Carteira");
+ a.opening=90000;
+ const tx=add(s,{type:"transfer",amount:12000,accountId:a.id,toAccountId:b.id});
+ editTransaction(s,tx.id,{type:"transfer",amount:30000,date:tx.date,status:"paid",accountId:a.id,toAccountId:c.id,description:"Reserva de emergência"},0);
+ assert.equal(balance(s,a.id),60000);
+ assert.equal(balance(s,b.id),0);
+ assert.equal(balance(s,c.id),30000);
+ assert.equal(summary(s).balance,90000);
+ assert.equal(summary(s).income,0);
+ assert.equal(summary(s).expense,0);
+ assert.equal(monthlyForecast(s,"2026-11").expectedIncome,0);
+ assert.throws(()=>editTransaction(s,tx.id,{type:"transfer",amount:30000,date:tx.date,status:"paid",accountId:a.id,toAccountId:a.id,description:"Inválido"},1));
+});
+test("edições inválidas, obsoletas ou de estornados são bloqueadas",()=>{
+ const s=initial(),accountId=s.accounts[0].id;
+ const tx=add(s,{type:"income",amount:1500,accountId,status:"pending"});
+ const payload={type:"income",amount:1700,date:tx.date,status:"pending",accountId,toAccountId:null,category:"Salário",description:"Salário"};
+ assert.throws(()=>editTransaction(s,tx.id,{...payload,amount:0},0));
+ assert.equal(tx.amount,1500);
+ editTransaction(s,tx.id,payload,0);
+ assert.throws(()=>editTransaction(s,tx.id,{...payload,amount:2000},0),/Reabra a edição/);
+ assert.equal(tx.amount,1700);
+ reverse(s,tx.id);
+ assert.throws(()=>editTransaction(s,tx.id,payload,1),/estornado/);
+ assert.equal(s.transactions.length,1);
 });
