@@ -1,4 +1,4 @@
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -12,12 +12,23 @@ function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta 
 function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){const s=$(id),v=s.value;s.replaceChildren();state.categories.forEach(c=>opt(s,c,c));if([...s.options].some(o=>o.value===v))s.value=v;}}
 function render(){
  fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);const pendingElement=$("pending");if(pendingElement)pendingElement.textContent=sum.pending;
- const month=$("month").value||monthDefault, rows=monthRows(state,month).filter(t=>t.status==="paid");const inc=rows.filter(t=>t.type==="income").reduce((n,t)=>n+t.amount,0),exp=rows.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0),net=inc-exp;
- $("income").textContent=money(inc);$("expense").textContent=money(exp);const result=$("month-result");result.textContent=money(net);result.className=net>=0?"positive":"negative";
- const totals=categoryTotals(state,month),entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
- if(!entries.length)bars.append(el("p","Nenhuma despesa liquidada neste mês.","empty"));
+ const month=$("month").value||monthDefault;
+ const forecast=monthlyForecast(state,month);
+ const inc=forecast.paidIncome,exp=forecast.paidExpense,net=forecast.actualResult;
+ $("income").textContent=money(forecast.expectedIncome);
+ $("income-paid").textContent=money(forecast.paidIncome);
+ $("income-pending").textContent=money(forecast.pendingIncome);
+ $("expense").textContent=money(forecast.expectedExpense);
+ $("expense-paid").textContent=money(forecast.paidExpense);
+ $("expense-pending").textContent=money(forecast.pendingExpense);
+ const result=$("month-result");result.textContent=money(forecast.expectedResult);result.className=forecast.expectedResult>=0?"positive":"negative";
+ $("actual-result").textContent=money(forecast.actualResult);
+ $("forecast-balance").textContent=balanceHidden?"R$ ••••":money(projectedBalance(state,month));
+ const totals=forecast.expenseCategories, paidTotals=categoryTotals(state,month);
+ const entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
+ if(!entries.length)bars.append(el("p","Nenhuma despesa prevista para este mês.","empty"));
  else {const top=entries[0][1];for(const [name,value] of entries){const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel"),a=el("span",name),b=el("strong",money(value)),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=(value/top*100)+"%";track.append(fill);lab.append(a,b);row.append(lab,track);bars.append(row);}}
- renderDashboard(month,inc,exp,net,totals,entries);
+ renderDashboard(month,forecast,totals,entries);
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
  for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");stateCell.append(el("span",t.status==="paid"?"Liquidado":"Pendente","pill "+t.status));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
@@ -25,13 +36,13 @@ function render(){
  const rev=el("button","Estornar","danger rowaction");rev.onclick=()=>{if(confirm("Estornar este lançamento? A operação ficará registrada na auditoria."))commit(s=>reverse(s,t.id));};action.append(rev);tr.append(action);body.append(tr);}
  const accounts=$("accounts");accounts.replaceChildren();for(const a of state.accounts){const card=el("article",undefined,"accountcard");card.append(el("span",a.name),el("strong",money(balance(state,a.id))),el("p","Saldo inicial: "+money(a.opening),"muted"));accounts.append(card);}
  const budgets=$("budgets");budgets.replaceChildren();const monthBudgets=Object.entries(state.budgets).filter(([key])=>key.startsWith(month+"|"));if(!monthBudgets.length)budgets.append(el("p","Nenhum orçamento definido para este mês.","empty"));
- for(const [key,limit] of monthBudgets){const category=key.split("|").slice(1).join("|"),spent=totals[category]||0,row=el("div",undefined,"budgetrow"),lab=el("div",undefined,"barlabel"),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");lab.append(el("span",category),el("strong",money(spent)+" / "+money(limit)));fill.style.width=(limit?Math.min(100,spent/limit*100):100)+"%";if(spent>limit)fill.style.background="#ff869a";track.append(fill);row.append(lab,track);budgets.append(row);}
+ for(const [key,limit] of monthBudgets){const category=key.split("|").slice(1).join("|"),spent=paidTotals[category]||0,row=el("div",undefined,"budgetrow"),lab=el("div",undefined,"barlabel"),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");lab.append(el("span",category),el("strong",money(spent)+" / "+money(limit)));fill.style.width=(limit?Math.min(100,spent/limit*100):100)+"%";if(spent>limit)fill.style.background="#ff869a";track.append(fill);row.append(lab,track);budgets.append(row);}
  const audit=$("audit");audit.replaceChildren();if(!state.audit.length)audit.append(el("p","Sem eventos."));for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+event.details));
 }
 
 const colors=["#12df9a","#a456f5","#298df2","#ffab2a","#a5b8cc","#f46e9a"];
 let balanceHidden=false;
-function renderDashboard(month,inc,exp,net,totals,entries){
+function renderDashboard(month,forecast,totals,entries){
  const total=entries.reduce((n,e)=>n+e[1],0);
  $("donut-total").textContent=money(total);
  if(total){
@@ -39,20 +50,26 @@ function renderDashboard(month,inc,exp,net,totals,entries){
   entries.forEach(([_,value],i)=>{const to=from+value/total*100;stops.push(colors[i%colors.length]+" "+from+"% "+to+"%");from=to;});
   $("donut").style.background="conic-gradient("+stops.join(",")+")";
  } else $("donut").style.background="conic-gradient(#263b56 0 100%)";
- $("donut").setAttribute("aria-label",total?"Despesas por categoria: "+entries.map(([n,v])=>n+" "+money(v)).join(", "):"Sem despesas liquidadas no mês");
+ $("donut").setAttribute("aria-label",total?"Despesas por categoria: "+entries.map(([n,v])=>n+" "+money(v)).join(", "):"Sem despesas previstas no mês");
  const pending=state.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.type!=="transfer").sort((a,b)=>a.date.localeCompare(b.date));
- const upcoming=$("upcoming");upcoming.replaceChildren();
- if(!pending.length)upcoming.append(el("p","Nenhum vencimento pendente cadastrado.","empty"));
- for(const t of pending.slice(0,4)){
+ function buildDueRow(t){
   const row=el("div",undefined,"due-row"),day=el("div",undefined,"due-date");
   const [y,m,d]=t.date.split("-").map(Number);
   day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
-  const details=el("div");details.append(el("span",t.type==="expense"?"A PAGAR":"A RECEBER","pill pending"),el("div",t.description||t.category,"due-name"),el("div",t.category+" • "+accountName(t.accountId),"due-sub"));
+  const details=el("div");
+  details.append(el("span",t.type==="expense"?"A PAGAR":"A RECEBER","pill pending"),el("div",t.description||t.category,"due-name"),el("div",t.category+" • "+accountName(t.accountId),"due-sub"));
   const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
-  const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
-  row.append(day,details,amount,btn);upcoming.append(row);
+  const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
+  btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
+  row.append(day,details,amount,btn);return row;
  }
- $("pending-caption").textContent=pending.length>4?"Mostrando 4 de "+pending.length+" pendências. Consulte o histórico para ver as demais.":"Data exibida: data prevista informada no lançamento.";
+ const upcoming=$("upcoming"),agenda=$("all-upcoming");
+ upcoming.replaceChildren();agenda.replaceChildren();
+ if(!pending.length){upcoming.append(el("p","Nenhum vencimento pendente cadastrado.","empty"));agenda.append(el("p","Nenhuma receita a receber ou despesa a pagar.","empty"));}
+ for(const t of pending.slice(0,4))upcoming.append(buildDueRow(t));
+ for(const t of pending)agenda.append(buildDueRow(t));
+ $("pending-caption").textContent=pending.length>4?"Mostrando 4 de "+pending.length+" pendências. Abra Vencimentos para consultar todas.":"Data exibida: data prevista informada no lançamento.";
+ $("agenda-caption").textContent=pending.length+" pendência(s), ordenadas por data. Vencimentos atrasados permanecem na lista até serem liquidados ou estornados.";
  $("account-count").textContent="("+state.accounts.length+")";
  const accounts=$("home-accounts");accounts.replaceChildren();
  state.accounts.slice(0,4).forEach(acc=>{const row=el("div",undefined,"home-account"),ico=el("span","▤","bank-icon"),name=el("div",undefined,"account-title");name.append(el("strong",acc.name),el("small","Conta local"));row.append(ico,name,el("div",balanceHidden?"R$ ••••":money(balance(state,acc.id)),"amount"));accounts.append(row);});
@@ -60,8 +77,8 @@ function renderDashboard(month,inc,exp,net,totals,entries){
  const goals=state.goals||[];if(!goals.length){targets.append(el("p","Nenhuma meta criada. Use Nova meta para começar.","empty"));list.append(el("p","Suas metas aparecerão aqui.","empty"));}
  for(const goal of goals){targets.append(buildGoalCard(goal,false));list.append(buildGoalCard(goal,true));}
  const report=$("monthly-report");report.replaceChildren();
- for(const [label,value] of [["Receitas liquidadas",inc],["Despesas liquidadas",exp],["Resultado do mês",net],["Despesas pendentes (todas as datas)",pending.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0)]]){
-   const row=el("div",undefined,"barlabel");row.append(el("span",label),el("strong",money(value)));report.append(row);
+ for(const [label,value] of [["Receitas previstas no mês (liquidadas + pendentes)",forecast.expectedIncome],["Receitas recebidas",forecast.paidIncome],["Receitas a receber",forecast.pendingIncome],["Despesas previstas no mês (liquidadas + pendentes)",forecast.expectedExpense],["Despesas pagas",forecast.paidExpense],["Despesas a pagar",forecast.pendingExpense],["Resultado efetivo do mês",forecast.actualResult],["Resultado previsto do mês",forecast.expectedResult],["Saldo projetado até o fim do mês (pendências vencidas incluídas)",projectedBalance(state,month)]]){
+   const row=el("div",undefined,"barlabel");row.append(el("span",label),el("strong",balanceHidden?"R$ ••••":money(value)));report.append(row);
  }
  $("balance").textContent=balanceHidden?"R$ ••••":money(summary(state).balance);
 }
@@ -91,9 +108,9 @@ $("import-json").onchange=async e=>{const file=e.target.files?.[0];if(!file)retu
 $("clear-data").onclick=()=>{if(prompt('Digite APAGAR para excluir definitivamente os dados deste navegador:')!=="APAGAR")return;const fresh=initial();try{localStorage.setItem(KEY,JSON.stringify(fresh));state=fresh;render();say("Dados locais apagados.");}catch(e){say(e.message,true);}};
 
 $("toggle-balance").onclick=()=>{balanceHidden=!balanceHidden;render();};
-function openTx(type="expense"){
+function openTx(type="expense",status="paid"){
  if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);
- $("tx-form").reset();$("tx-type").value=type;$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");
+ $("tx-form").reset();$("tx-type").value=type;$("tx-form").elements.status.value=status;$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");
 }
 $("new-transaction").onclick=$("open-tx").onclick=$("bottom-add").onclick=()=>openTx();
 document.querySelectorAll("[data-quick]").forEach(button=>button.addEventListener("click",()=>{
@@ -102,7 +119,22 @@ document.querySelectorAll("[data-quick]").forEach(button=>button.addEventListene
 }));
 $("open-goal").onclick=()=>dialog("goal-dialog");
 $("goal-form").onsubmit=e=>{e.preventDefault();const f=e.currentTarget;try{let ok=false;commit(s=>{addGoal(s,f.elements.name.value,parseMoney(f.elements.target.value));ok=true;});if(ok&&$("notice").className!=="error")$("goal-dialog").close();}catch(err){say(err.message,true);}};
-$("all-pending").onclick=()=>{$("filter-status").value="pending";render();};
+$("new-due").onclick=()=>openTx("expense","pending");
+const pages=[...document.querySelectorAll(".main > section[data-page]")];
+const allowed=new Set(pages.map(page=>page.id));
+const navLinks=[...document.querySelectorAll(".bottom-item, .bottom-secondary a, .sidebar .nav")];
+const pageTitles={dashboard:["Olá! 👋","Aqui está um resumo das suas finanças."],agenda:["Vencimentos","Receitas e despesas previstas, ainda não liquidadas."],movimentos:["Movimentações","Consulte e gerencie seus lançamentos."],contas:["Contas","Saldos e contas financeiras."],metas:["Metas","Acompanhe seus objetivos."],planejamento:["Orçamentos","Planeje seus limites por categoria."],relatorios:["Relatórios","Compare o previsto e o realizado."],cartoes:["Cartões","Módulo de cartões em desenvolvimento."],dados:["Dados e segurança","Exportação, restauração e privacidade."]};
+function updateNavigation(){
+ const requested=(location.hash||"#dashboard").slice(1);
+ const selected=requested==="vencimentos"?"agenda":allowed.has(requested)?requested:"dashboard";
+ for(const page of pages){const active=page.id===selected;page.hidden=!active;page.setAttribute("aria-hidden",String(!active));}
+ for(const link of navLinks){const active=link.getAttribute("href")==="#"+selected;link.classList.toggle("active",active);if(active)link.setAttribute("aria-current","page");else link.removeAttribute("aria-current");}
+ const [heading,subtitle]=pageTitles[selected];document.querySelector(".top h1").textContent=heading;document.querySelector(".top .muted").textContent=subtitle;
+ window.scrollTo(0,0);
+}
+window.addEventListener("hashchange",updateNavigation);
+updateNavigation();
+render();};
 const navLinks=[...document.querySelectorAll(".bottom-item, .sidebar .nav")];
 function updateNavigation(){
  const hash=location.hash||"#dashboard";
