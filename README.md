@@ -8,7 +8,7 @@ Acesse `index.html` a partir de um servidor HTTP local ou publique o diretório 
 
 ### Funcionalidades disponíveis
 
-- Dashboard de saldos consolidados, receitas e despesas liquidadas e pendências.
+- Dashboard com saldo efetivo, receitas e despesas previstas (liquidadas + pendentes), valores realizados, resultado do mês e saldo projetado.
 - Contas com saldo inicial e cálculo de saldo derivado dos lançamentos.
 - Lançamentos de receitas, despesas e transferências entre contas.
 - Separação de liquidações e pendências, com ação de liquidar.
@@ -70,3 +70,23 @@ npx wrangler deploy
 O Worker continua identificado como `controle-financeiro-360` no `wrangler.toml` para **não trocar o endereço de produção inadvertidamente**. Renomear o projeto no GitHub não renomeia o Worker da Cloudflare.
 
 **Importante:** o workflow `.github/workflows/check.yml` apenas valida os testes e a sintaxe; ele **não implanta** o aplicativo. Se não houver uma integração de publicação automática já configurada no painel Cloudflare, é necessário fazer o deploy manualmente ou configurar um pipeline com credenciais protegidas. Não há garantia de publicação ao executar apenas os testes.
+
+## Navegação por abas e previsões (novembro de 2026)
+
+A tela inicial é o **Dashboard**. As outras áreas (**Vencimentos, Movimentações, Contas, Metas, Orçamentos, Relatórios, Cartões e Dados**) aparecem em **abas distintas**, via navegação lateral no desktop ou barra inferior no celular; somente a aba selecionada fica visível.
+
+O seletor de mês no cabeçalho controla os indicadores mensais. Os cartões mostram:
+
+- **Receitas previstas** = receitas efetivamente recebidas + receitas pendentes no mês.
+- **Despesas previstas** = despesas efetivamente pagas + despesas pendentes no mês.
+- **Resultado previsto** = receitas previstas − despesas previstas; o resultado efetivo também aparece separadamente.
+- **Saldo disponível (efetivo)** = soma dos saldos das contas com operações liquidadas.
+- **Saldo projetado** = saldo disponível atual + receitas ainda pendentes − despesas ainda pendentes **com data até o fim do mês selecionado**, incluindo obrigações atrasadas.
+- O gráfico de despesas por categoria apresenta **despesas previstas** (liquidadas + pendentes), enquanto os orçamentos permanecem comparados aos **gastos liquidados**.
+- A aba **Vencimentos** lista receitas a receber e despesas a pagar, ordenadas por data; os botões Pagar e Receber liquidam a operação e mudam automaticamente a composição dos cartões, sem contabilizar o valor duas vezes.
+
+A data de um lançamento pendente funciona como sua data prevista. A versão atual ainda não registra uma segunda data independente para liquidação: ao liquidar, a data original continua associada ao lançamento. O saldo projetado é uma **simulação**, não dinheiro disponível nem previsão garantida. Transferências internas e operações estornadas não afetam receita/despesa nos indicadores.
+
+### Verificação automática
+
+`node --test tests/*.test.mjs` inclui testes de projeção, prevenção de duplicidade após liquidar, navegação por abas, indicadores necessários e sincronização dos arquivos da raiz com `public/`.
