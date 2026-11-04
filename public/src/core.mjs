@@ -11,9 +11,10 @@ export function parseMoney(value) {
   if (!Number.isSafeInteger(num) || num <= 0) throw Error("O valor deve ser maior que zero e caber em centavos.");
   return num;
 }
-export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:["Alimentação","Moradia","Transporte","Saúde","Educação","Lazer","Salário","Vendas","Outros"],transactions:[],budgets:{},audit:[]});
+export const initial = () => ({version:VERSION,accounts:[{id:uid(),name:"Conta principal",opening:0}],categories:["Alimentação","Moradia","Transporte","Saúde","Educação","Lazer","Salário","Vendas","Outros"],transactions:[],budgets:{},goals:[],audit:[]});
 export function validateState(s) {
   if (!s || s.version !== VERSION || !Array.isArray(s.accounts) || !Array.isArray(s.transactions) || !Array.isArray(s.audit) || !Array.isArray(s.categories) || typeof s.budgets !== "object" || s.budgets === null) throw Error("Arquivo de dados incompatível.");
+  if(s.goals!==undefined && (!Array.isArray(s.goals)||s.goals.some(g=>!g.id||typeof g.name!=="string"||!Number.isSafeInteger(g.target)||g.target<=0||!Number.isSafeInteger(g.saved)||g.saved<0))) throw Error("Metas inválidas.");
   const ids = new Set();
   for (const a of s.accounts) {
     if (!a.id || typeof a.name!=="string" || !Number.isSafeInteger(a.opening)) throw Error("Conta inválida.");
@@ -56,3 +57,16 @@ export function monthRows(s,month) {return s.transactions.filter(t=>!t.reversedB
 export function categoryTotals(s,month){const out={};for(const t of monthRows(s,month)){if(t.type==="expense"&&t.status==="paid")out[t.category]=(out[t.category]||0)+t.amount;}return out;}
 export function exportData(s){validateState(s);return JSON.stringify(s,null,2);}
 export function importData(raw){const s=validateState(JSON.parse(raw));return structuredClone(s);}
+
+export function addGoal(s,name,target){
+  if(!String(name).trim()||String(name).trim().length>80||!Number.isSafeInteger(target)||target<=0)throw Error("Informe nome e valor válido para a meta.");
+  s.goals ??=[];const goal={id:uid(),name:String(name).trim(),target,saved:0};s.goals.push(goal);record(s,"goal.create",goal.id);return goal;
+}
+export function contributeGoal(s,id,amount){
+  if(!Number.isSafeInteger(amount)||amount<=0)throw Error("Aporte inválido.");
+  const goal=(s.goals||[]).find(g=>g.id===id);if(!goal)throw Error("Meta não encontrada.");
+  if(!Number.isSafeInteger(goal.saved+amount))throw Error("Valor muito alto.");
+  goal.saved+=amount;record(s,"goal.contribute",goal.id);
+  // É acompanhamento de meta, não movimentação bancária.
+  return goal;
+}
