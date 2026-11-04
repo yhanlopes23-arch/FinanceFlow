@@ -1,5 +1,5 @@
 import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -8,7 +8,7 @@ function ensureCategories(data){data.categories=[...new Set([...data.categories,
 ensureCategories(state);
 const monthDefault=today().slice(0,7);$("month").value=monthDefault;
 function say(message,error=false){const n=$("notice");n.textContent=message;n.classList.toggle("error",error);}
-function commit(fn){const clone=structuredClone(state);try{fn(clone);validateState(clone);localStorage.setItem(KEY,JSON.stringify(clone));state=clone;render();say("Alterações salvas neste navegador.");}catch(e){say(e.message,true);}}
+function commit(fn){const clone=structuredClone(state);try{fn(clone);validateState(clone);localStorage.setItem(KEY,JSON.stringify(clone));state=clone;render();say("Alterações salvas neste navegador.");return true;}catch(e){say(e.message,true);return false;}}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node;}
 function opt(select,value,label){const o=new Option(label,value);select.add(o);}
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta removida";}
@@ -43,11 +43,13 @@ function render(){
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
  for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
  if(t.status==="pending"){const b=el("button","Liquidar","secondary rowaction");b.onclick=()=>commit(s=>settle(s,t.id));action.append(b);}
+ const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);action.append(edit);
  const rev=el("button","Estornar","danger rowaction");rev.onclick=()=>{if(confirm("Estornar este lançamento? A operação ficará registrada na auditoria."))commit(s=>reverse(s,t.id));};action.append(rev);tr.append(action);body.append(tr);}
  const accounts=$("accounts");accounts.replaceChildren();for(const a of state.accounts){const card=el("article",undefined,"accountcard");card.append(el("span",a.name),el("strong",money(balance(state,a.id))),el("p","Saldo inicial: "+money(a.opening),"muted"));accounts.append(card);}
  const budgets=$("budgets");budgets.replaceChildren();const monthBudgets=Object.entries(state.budgets).filter(([key])=>key.startsWith(month+"|"));if(!monthBudgets.length)budgets.append(el("p","Nenhum orçamento definido para este mês.","empty"));
  for(const [key,limit] of monthBudgets){const category=key.split("|").slice(1).join("|"),spent=paidTotals[category]||0,row=el("div",undefined,"budgetrow"),lab=el("div",undefined,"barlabel"),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");lab.append(el("span",category),el("strong",money(spent)+" / "+money(limit)));fill.style.width=(limit?Math.min(100,spent/limit*100):100)+"%";if(spent>limit)fill.style.background="#ff869a";track.append(fill);row.append(lab,track);budgets.append(row);}
- const audit=$("audit");audit.replaceChildren();if(!state.audit.length)audit.append(el("p","Sem eventos."));for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+event.details));
+ const audit=$("audit");audit.replaceChildren();if(!state.audit.length)audit.append(el("p","Sem eventos."));
+for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+describeAudit(event)));
 }
 
 const colors=["#12df9a","#a456f5","#298df2","#ffab2a","#a5b8cc","#f46e9a"];
@@ -71,7 +73,9 @@ function renderDashboard(month,forecast,totals,entries){
   const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
   const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
   btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
-  row.append(day,details,amount,btn);return row;
+  const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);
+  const actions=el("div",undefined,"due-actions");actions.append(btn,edit);
+  row.append(day,details,amount,actions);return row;
  }
  const upcoming=$("upcoming"),agenda=$("all-upcoming");
  upcoming.replaceChildren();agenda.replaceChildren();
@@ -101,6 +105,38 @@ function buildGoalCard(goal,showActions){
  return card;
 }
 
+function describeAudit(event){
+ if(event.action!=="transaction.edit")return String(event.details??"");
+ try{
+  const change=JSON.parse(event.details),labels={type:"Tipo",amount:"Valor",date:"Data",status:"Situação",accountId:"Conta origem",toAccountId:"Conta destino",category:"Categoria",description:"Descrição"};
+  const value=(k,v)=>k==="amount"&&typeof v==="number"?money(v):v===null?"(sem conta)":String(v);
+  const parts=Object.keys(change.after).filter(k=>change.before[k]!==change.after[k]).map(k=>labels[k]+": "+value(k,change.before[k])+" → "+value(k,change.after[k]));
+  return "Lançamento "+change.id+" — "+parts.join("; ");
+ }catch{return "Alteração registrada no histórico.";}
+}
+let editingId=null;
+let editingRevision=null;
+function openEditTransaction(id){
+ const tx=state.transactions.find(t=>t.id===id);
+ if(!tx||tx.reversedBy){say("Lançamento inexistente ou estornado não pode ser editado.",true);return;}
+ editingId=id;editingRevision=tx.revision??0;
+ const form=$("tx-form");form.reset();
+ fillOptions();
+ form.elements.type.value=tx.type;
+ form.elements.description.value=tx.description??"";
+ form.elements.amount.value=new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(tx.amount/100);
+ form.elements.date.value=tx.date;
+ form.elements.status.value=tx.status;
+ form.elements.accountId.value=tx.accountId;
+ form.elements.toAccountId.value=tx.toAccountId||"";
+ if(tx.category&&!state.categories.includes(tx.category))opt($("tx-category"),tx.category,tx.category);
+ $("tx-category").value=tx.category||"";
+ syncType();
+ $("tx-title").textContent="Editar lançamento";
+ $("tx-save").textContent="Salvar alterações";
+ $("tx-edit-hint").hidden=false;
+ dialog("tx-dialog");
+}
 function dialog(id){const d=$(id);d.showModal();d.querySelector("input:not([type=hidden])")?.focus();}
 
 function showCategorySuggestion(){
@@ -148,10 +184,21 @@ function syncType(){
  $("tx-date-hint").textContent=dateFieldHint(type,status);
  showCategorySuggestion();
 }
-$("tx-type").addEventListener("change",syncType);$("tx-form").elements.status.addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>{if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);$("tx-form").reset();$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");};
+$("tx-type").addEventListener("change",syncType);$("tx-form").elements.status.addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>openTx();
 $("open-account").onclick=()=>{$("account-form").reset();dialog("account-dialog");};
 document.querySelectorAll(".cancel").forEach(b=>b.onclick=()=>b.closest("dialog").close());
-$("tx-form").onsubmit=e=>{e.preventDefault();const f=e.currentTarget,p=Object.fromEntries(new FormData(f));try{const amount=parseMoney(p.amount);let done=false;commit(s=>{addTransaction(s,{...p,amount});done=true;});if(done&&$("notice").className!=="error")$("tx-dialog").close();}catch(err){say(err.message,true);}};
+$("tx-dialog").addEventListener("close",()=>{editingId=null;editingRevision=null;});
+$("tx-form").onsubmit=e=>{
+ e.preventDefault();const form=e.currentTarget,p=Object.fromEntries(new FormData(form));
+ try{
+  const amount=parseMoney(p.amount);
+  const changes={...p,amount};
+  const isEdit=editingId!==null;
+  if(commit(s=>{if(isEdit)editTransaction(s,editingId,changes,editingRevision);else addTransaction(s,changes);})){
+   $("tx-dialog").close();
+  }
+ }catch(err){say(err.message,true);}
+};
 $("account-form").onsubmit=e=>{e.preventDefault();const f=e.currentTarget;try{const amount=String(f.elements.opening.value).trim();const opening=amount==="0"||amount==="0,00"?0:parseMoney(amount);let done=false;commit(s=>{addAccount(s,f.elements.name.value,opening);done=true;});if(done&&$("notice").className!=="error")$("account-dialog").close();}catch(err){say(err.message,true);}};
 $("budget-form").onsubmit=e=>{e.preventDefault();try{const cents=parseMoney($("budget-amount").value);commit(s=>{const key=$("month").value+"|"+$("budget-category").value;s.budgets[key]=cents;record(s,"budget.set",key);});$("budget-amount").value="";}catch(err){say(err.message,true);}};
 for(const id of ["month","search","filter-type","filter-status"])$(id).addEventListener(id==="search"?"input":"change",render);
@@ -165,6 +212,8 @@ $("clear-data").onclick=()=>{if(prompt('Digite APAGAR para excluir definitivamen
 $("toggle-balance").onclick=()=>{balanceHidden=!balanceHidden;render();};
 function openTx(type="expense",status="paid"){
  if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);
+ editingId=null;editingRevision=null;
+ $("tx-title").textContent="Novo lançamento";$("tx-save").textContent="Salvar lançamento";$("tx-edit-hint").hidden=true;
  $("tx-form").reset();$("tx-type").value=type;$("tx-form").elements.status.value=status;$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");
 }
 $("new-transaction").onclick=$("open-tx").onclick=$("bottom-add").onclick=()=>openTx();
