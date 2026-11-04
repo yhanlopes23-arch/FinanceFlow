@@ -115,3 +115,18 @@ No MVP, um lançamento pendente marcado como recebido/pago mantém a data origin
 ## Edição de lançamentos e vencimentos
 
 Nas abas **Movimentações** e **Vencimentos**, selecione **Editar** para abrir o lançamento com dados já preenchidos. É possível corrigir tipo, descrição, valor, data, situação, categoria e contas. Ao salvar, o mesmo identificador é preservado e os indicadores, saldos e previsões são recalculados sem duplicar valores. A auditoria local mantém os valores anteriores e posteriores, com controle de revisão para evitar sobrescrita de formulários desatualizados. Lançamentos estornados não podem ser editados.
+
+## Dashboard visual e sugestão de quitação proporcional
+
+O dashboard usa o tema Glassy da referência: cartões azul-marinho translúcidos, verde para receitas, rosa para despesas, gráfico circular, atalhos, próximos vencimentos, contas, metas e navegação inferior no celular. **Todos os valores vêm dos dados locais; não há números fictícios.**
+
+O cartão **Sugestão de quitação proporcional** identifica **todas as despesas em aberto cuja data de vencimento é anterior ao dia atual**. O próprio dia do vencimento não conta como atraso. Para simular:
+
+1. Selecione a conta que fornecerá os recursos. O saldo disponível dessa conta, e não o saldo projetado, limita a sugestão.
+2. Ajuste o valor que pretende distribuir. O aplicativo sugere inicialmente até o limite do menor valor entre o saldo disponível da conta e o total das despesas vencidas.
+3. Confira o valor em aberto e o montante sugerido para cada dívida. O rateio segue a proporção do saldo restante de cada despesa, usando números inteiros em centavos e distribuição determinística dos centavos residuais.
+4. Clique em **Aplicar sugestão** e confirme. O aplicativo registra **pagamentos parciais ou totais apenas no armazenamento local**; não acessa contas bancárias, não paga boletos e não faz Pix.
+
+Um pagamento parcial reduz imediatamente o saldo da conta pagadora e diminui o valor pendente da despesa original, mantendo a obrigação aberta até a quitação total. O valor já pago entra no realizado, e o valor restante permanece na previsão, sem contagem duplicada. O histórico de pagamentos fica dentro do lançamento para exportação JSON e a operação é documentada na auditoria local. Se o valor disponível for insuficiente para distribuir um centavo a cada despesa, algumas podem receber R$ 0,00 nessa sugestão, pois a menor unidade monetária é um centavo.
+
+**Importante:** não há integração com credores ou bancos. Confirme por conta própria se pagamentos parciais são aceitos e como juros, multas, encargos e acordos serão tratados. O cálculo usa somente o principal cadastrado no FinanceFlow e não substitui orientação financeira ou jurídica.
