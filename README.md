@@ -44,7 +44,7 @@ node --check src/app.mjs
 
 **Atenção:** Este é um MVP **local, não uma aplicação bancária**, e não deve ser utilizado para dados sensíveis ou escrituração oficial. O `localStorage` **não tem autenticação, segregação de usuários, criptografia de dados em repouso, controle de acesso no servidor, sincronização, backup automático nem transações de banco de dados**. Não abra em computadores compartilhados. Exporte cópias de segurança regularmente. Um backup JSON é um arquivo não criptografado.
 
-O CSV é **somente exportação**, não importação. O registro de estorno é um indicador vinculado ao evento, ainda não um razão contábil imutável em partidas dobradas. Não há edição direta de lançamentos: para corrigir valor já gravado, estorne e registre novamente. Não há cartões, parcelas, recorrências, anexos, notificações, multiempresa nem integração bancária nesta entrega. Métricas resumem todo o histórico liquidado, enquanto o gráfico e resultado mensal respeitam o mês selecionado. As funcionalidades posteriores de autenticação e colaboração exigem API, banco transacional e autorização no servidor.
+O CSV é **somente exportação**, não importação. O registro de estorno é um indicador vinculado ao evento, ainda não um razão contábil imutável em partidas dobradas. Lançamentos não estornados podem ser editados diretamente, e as diferenças são registradas na auditoria local. O histórico não é imutável nem adequado para escrituração oficial. Não há cartões, parcelas, recorrências, anexos, notificações, multiempresa nem integração bancária nesta entrega. Métricas resumem todo o histórico liquidado, enquanto o gráfico e resultado mensal respeitam o mês selecionado. As funcionalidades posteriores de autenticação e colaboração exigem API, banco transacional e autorização no servidor.
 
 ## Histórico do projeto e documentação
 
@@ -111,3 +111,7 @@ Ao registrar uma receita ou despesa, digite uma **descrição**. O FinanceFlow s
 
 No MVP, um lançamento pendente marcado como recebido/pago mantém a data originalmente cadastrada; ainda não há um segundo campo independente de data real de liquidação. Para manter relatórios precisos, confira esse comportamento ao liquidar recebimentos fora da previsão.
 
+
+## Edição de lançamentos e vencimentos
+
+Nas abas **Movimentações** e **Vencimentos**, selecione **Editar** para abrir o lançamento com dados já preenchidos. É possível corrigir tipo, descrição, valor, data, situação, categoria e contas. Ao salvar, o mesmo identificador é preservado e os indicadores, saldos e previsões são recalculados sem duplicar valores. A auditoria local mantém os valores anteriores e posteriores, com controle de revisão para evitar sobrescrita de formulários desatualizados. Lançamentos estornados não podem ser editados.
