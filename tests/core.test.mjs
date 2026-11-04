@@ -114,3 +114,33 @@ test("edições inválidas, obsoletas ou de estornados são bloqueadas",()=>{
  assert.throws(()=>editTransaction(s,tx.id,payload,1),/estornado/);
  assert.equal(s.transactions.length,1);
 });
+
+test("edição preserva ID e atualiza projeções",()=>{
+ const s=initial(),from=s.accounts[0].id,to=addAccount(s,"Reserva",1000).id;
+ const tx=add(s,{type:"income",amount:20000,accountId:from});
+ const originalId=tx.id,originalCreatedAt=tx.createdAt;
+ const updated=editTransaction(s,tx.id,{...tx,type:"expense",amount:7500,date:"2026-12-20",status:"pending",accountId:to,category:"Moradia",description:"Aluguel dezembro"},0);
+ assert.equal(updated.id,originalId);assert.equal(updated.createdAt,originalCreatedAt);
+ assert.equal(updated.revision,1);assert.equal(s.transactions.length,1);
+ assert.equal(summary(s).balance,1000);assert.equal(monthlyForecast(s,"2026-11").expectedIncome,0);
+ assert.equal(monthlyForecast(s,"2026-12").pendingExpense,7500);assert.equal(projectedBalance(s,"2026-12"),-6500);
+ assert.equal(s.audit[0].action,"transaction.edit");
+ const history=JSON.parse(s.audit[0].details);
+ assert.equal(history.id,originalId);assert.equal(history.before.amount,20000);assert.equal(history.after.amount,7500);
+ assert.throws(()=>editTransaction(s,tx.id,{...updated,description:"Mudança concorrente"},0),/alterado/);
+ const auditCount=s.audit.length;
+ editTransaction(s,tx.id,{...updated},1);assert.equal(s.audit.length,auditCount,"não registrar edição sem mudanças");
+ settle(s,tx.id);assert.equal(summary(s).balance,-6500);
+ editTransaction(s,tx.id,{...updated,status:"pending"},1);assert.equal(summary(s).balance,1000);
+ assert.equal(importData(exportData(s)).transactions[0].id,originalId);
+ reverse(s,tx.id);assert.throws(()=>editTransaction(s,tx.id,{...updated,amount:1000}),/estornado/);
+});
+test("edição inválida de transferência é rejeitada sem efeitos",()=>{
+ const s=initial(),from=s.accounts[0].id,to=addAccount(s,"Reserva").id;
+ const tx=add(s,{type:"transfer",amount:1000,accountId:from,toAccountId:to});
+ const before=structuredClone(tx),auditCount=s.audit.length;
+ assert.throws(()=>editTransaction(s,tx.id,{...tx,toAccountId:from}),/Confira valor/);
+ assert.deepEqual(tx,before);assert.equal(s.audit.length,auditCount);
+ editTransaction(s,tx.id,{...tx,description:"Transferência corrigida"});
+ assert.equal(balance(s,from),-1000);assert.equal(balance(s,to),1000);
+});
