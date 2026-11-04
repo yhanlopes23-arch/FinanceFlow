@@ -127,3 +127,31 @@ body{background:var(--navy)}
   .section{scroll-margin-top:12px}
 }
 @media(max-width:360px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.summary-grid .stat strong{font-size:13px}.chart-layout{flex-direction:column}.quick b{display:none}.due-row{grid-template-columns:43px 1fr auto}}
+
+/* FinanceFlow v2 — abas exclusivas e projeções separadas do saldo efetivo */
+.main > section[data-page][hidden] { display:none !important; }
+.main > section[data-page] { animation:page-entry .17s ease-out; }
+.main > section[data-page]:not(#dashboard) { margin-top:0; min-height:55vh; }
+@keyframes page-entry {from {opacity:.7;transform:translateY(4px);} to{opacity:1;transform:none;}}
+.forecast-grid {grid-template-columns:repeat(4,minmax(0,1fr));}
+.forecast-grid .stat {gap:8px;justify-content:center;}
+.forecast-grid .stat small {line-height:1.35;font-size:11px;}
+.forecast-grid .stat small b {color:#e8f7fa;font-weight:700;}
+.forecast-grid .stat > strong {font-size:clamp(20px,2vw,29px);white-space:normal;overflow-wrap:anywhere;}
+.stat-projection {background:linear-gradient(125deg,rgba(27,78,106,.45),rgba(19,39,69,.53));border-color:rgba(62,177,229,.32);}
+.forecast-explainer {margin:-3px 0 18px;padding:11px 15px;border-left:3px solid #4ce0ba;color:#b6cce0;font-size:12px;line-height:1.6;background:rgba(13,43,59,.38);border-radius:8px;}
+.agenda-list .due-row {padding:17px 0;border-bottom:1px solid rgba(255,255,255,.1);}
+.agenda-list .due-row:last-child {border-bottom:none;}
+.sidebar .nav.active,.bottom-nav .bottom-item.active,.bottom-secondary a.active {color:#33ecba;}
+.bottom-secondary a.active {font-weight:800;text-decoration:underline;text-underline-offset:5px;}
+@media (max-width:1200px){.forecast-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:750px){
+ .forecast-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+ .forecast-grid .stat{min-height:112px;padding:15px 12px;}
+ .forecast-grid .stat > strong{font-size:clamp(18px,4.5vw,24px);}
+ .forecast-grid .stat small{font-size:10px;}
+ .forecast-explainer{font-size:11px;}
+ .main > section[data-page]:not(#dashboard){margin-top:0;}
+}
+@media(max-width:360px){.forecast-grid{grid-template-columns:1fr 1fr!important;}}
+@media(prefers-reduced-motion:reduce){.main > section[data-page]{animation:none;}}
