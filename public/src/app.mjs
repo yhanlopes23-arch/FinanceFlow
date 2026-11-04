@@ -11,7 +11,7 @@ function opt(select,value,label){const o=new Option(label,value);select.add(o);}
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta removida";}
 function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){const s=$(id),v=s.value;s.replaceChildren();state.categories.forEach(c=>opt(s,c,c));if([...s.options].some(o=>o.value===v))s.value=v;}}
 function render(){
- fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);$("pending").textContent=sum.pending;
+ fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);const pendingElement=$("pending");if(pendingElement)pendingElement.textContent=sum.pending;
  const month=$("month").value||monthDefault, rows=monthRows(state,month).filter(t=>t.status==="paid");const inc=rows.filter(t=>t.type==="income").reduce((n,t)=>n+t.amount,0),exp=rows.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0),net=inc-exp;
  $("income").textContent=money(inc);$("expense").textContent=money(exp);const result=$("month-result");result.textContent=money(net);result.className=net>=0?"positive":"negative";
  const totals=categoryTotals(state,month),entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
