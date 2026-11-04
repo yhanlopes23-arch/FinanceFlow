@@ -1,4 +1,4 @@
-# Controle Financeiro 360°
+# FinanceFlow
 
 > Plataforma de controle financeiro modular para pessoas, famílias, autônomos e empresas.
 
