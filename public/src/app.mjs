@@ -1,5 +1,5 @@
 import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,partialPaid,remainingDue,overdueExpenses,proportionalPaymentPlan,applyProportionalPayments} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -39,9 +39,10 @@ function render(){
  if(!entries.length)bars.append(el("p","Nenhuma despesa prevista para este mês.","empty"));
  else {const top=entries[0][1];for(const [name,value] of entries){const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel"),a=el("span",name),b=el("strong",money(value)),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=(value/top*100)+"%";track.append(fill);lab.append(a,b);row.append(lab,track);bars.append(row);}}
  renderDashboard(month,forecast,totals,entries);
+ renderSettlement();
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
- for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
+ for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.type==="expense"&&t.status==="pending"?remainingDue(t):t.amount));if(t.type==="expense"&&partialPaid(t)>0&&t.status==="pending")amount.append(el("small"," • pago "+money(partialPaid(t)),"muted"));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
  if(t.status==="pending"){const b=el("button","Liquidar","secondary rowaction");b.onclick=()=>commit(s=>settle(s,t.id));action.append(b);}
  const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);action.append(edit);
  const rev=el("button","Estornar","danger rowaction");rev.onclick=()=>{if(confirm("Estornar este lançamento? A operação ficará registrada na auditoria."))commit(s=>reverse(s,t.id));};action.append(rev);tr.append(action);body.append(tr);}
@@ -70,9 +71,10 @@ function renderDashboard(month,forecast,totals,entries){
   day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
   const details=el("div");
   const info=paymentDateStatus(t);details.append(el("span",info.label,"pill "+info.kind),el("div",t.description||t.category,"due-name"),el("div",(t.type==="income"?"Receber em ":"Pagar até ")+t.date.split("-").reverse().join("/")+" • "+t.category+" • "+accountName(t.accountId),"due-sub"));
-  const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
+  const amount=el("span",(t.type==="expense"?"−":"+")+money(t.type==="expense"?remainingDue(t):t.amount),"due-amount");
+  if(t.type==="expense"&&partialPaid(t)>0)amount.append(el("small","Já pago: "+money(partialPaid(t)),"muted"));
   const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
-  btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
+  btn.addEventListener("click",()=>{if(confirm("Confirmar quitação do saldo restante de "+money(remainingDue(t))+"? Registro local, sem transferência bancária."))commit(s=>settle(s,t.id));});
   const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);
   const actions=el("div",undefined,"due-actions");actions.append(btn,edit);
   row.append(day,details,amount,actions);return row;
@@ -96,6 +98,70 @@ function renderDashboard(month,forecast,totals,entries){
  }
  $("balance").textContent=balanceHidden?"R$ ••••":money(summary(state).balance);
 }
+
+let settlementBudgetEdited=false;
+let suggestedPaymentPlan=null;
+function renderSettlement(){
+ const accountSelect=$("settlement-account"),budgetInput=$("settlement-budget"),out=$("settlement-items");
+ const previous=accountSelect.value;
+ accountSelect.replaceChildren();
+ for(const account of state.accounts)opt(accountSelect,account.id,account.name+" • "+money(balance(state,account.id)));
+ if(state.accounts.some(a=>a.id===previous))accountSelect.value=previous;
+ else {
+  const best=[...state.accounts].sort((a,b)=>balance(state,b.id)-balance(state,a.id))[0];
+  if(best)accountSelect.value=best.id;
+ }
+ const chosen=accountSelect.value;
+ const available=chosen?Math.max(0,balance(state,chosen)):0;
+ const overdue=overdueExpenses(state),outstanding=overdue.reduce((total,t)=>total+remainingDue(t),0);
+ $("settlement-available").textContent=money(available);
+ if(!settlementBudgetEdited)budgetInput.value=new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.min(available,outstanding)/100);
+ const text=budgetInput.value.trim();
+ let requested=0,error="";
+ try{requested=text?parseMoney(text):0;}catch(e){error=text==="0,00"||text==="0"?"":e.message;}
+ const apply=$("settlement-apply");
+ apply.disabled=true;suggestedPaymentPlan=null;out.replaceChildren();
+ if(!overdue.length){
+  out.append(el("p","Nenhuma despesa vencida e em aberto. Os pagamentos em dia continuam na aba Vencimentos.","settlement-empty"));
+  $("settlement-total").textContent="Total sugerido: "+money(0);
+  $("settlement-explain").textContent="Somente despesas com vencimento anterior à data de hoje entram no rateio.";
+  return;
+ }
+ if(available===0)error="A conta selecionada não tem saldo disponível. Escolha outra conta para calcular o rateio.";
+ if(!error&&requested>available)error="Valor maior que o saldo disponível na conta. Diminua o valor para continuar.";
+ if(!error){
+  try{suggestedPaymentPlan=proportionalPaymentPlan(state,chosen,requested);}catch(e){error=e.message;}
+ }
+ if(error)out.append(el("p",error,"settlement-warning"));
+ const plan=suggestedPaymentPlan;
+ const rows=plan?.rows?.length?plan.rows:overdue.map(t=>({id:t.id,description:t.description,date:t.date,outstanding:remainingDue(t),amount:0}));
+ for(const item of rows){
+  const row=el("div",undefined,"settlement-item"),heading=el("div",undefined,"settlement-item-name");
+  heading.append(el("span","◷","settlement-clock"),el("strong",item.description||"Despesa sem descrição"));
+  const open=el("span","Em aberto: "+money(item.outstanding),"settlement-item-open");
+  const allocated=el("span","Sugerido: "+money(item.amount),"settlement-item-allocated");
+  row.append(heading,open,allocated);out.append(row);
+ }
+ const amount=plan?.distributed||0;
+ $("settlement-total").textContent="Total sugerido: "+money(amount);
+ $("settlement-explain").textContent=outstanding===0?"Sem dívidas vencidas.":"Rateio proporcional sobre "+money(outstanding)+" em despesas vencidas, em centavos exatos. O saldo restante continua pendente.";
+ apply.disabled=Boolean(error)||!plan||!amount;
+}
+$("settlement-account").addEventListener("change",()=>{settlementBudgetEdited=false;renderSettlement();});
+$("settlement-budget").addEventListener("input",()=>{settlementBudgetEdited=true;renderSettlement();});
+$("settlement-apply").onclick=()=>{
+ const accountId=$("settlement-account").value,plan=suggestedPaymentPlan;
+ if(!plan||!plan.distributed)return say("Não há sugestão válida para aplicar.",true);
+ const count=plan.rows.filter(r=>r.amount>0).length;
+ const message="Registrar localmente "+money(plan.distributed)+" distribuídos proporcionalmente entre "+count+" despesa(s) vencida(s)?"+String.fromCharCode(10)+String.fromCharCode(10)+
+ "Os pagamentos parciais abatem o saldo em aberto. Nenhuma transferência, Pix ou boleto é pago automaticamente.";
+ if(!confirm(message))return;
+ if(commit(s=>applyProportionalPayments(s,accountId,plan.distributed))){
+  settlementBudgetEdited=false;renderSettlement();
+  say("Quitação proporcional registrada em "+count+" despesas. Consulte Vencimentos e Histórico para os saldos restantes.");
+ }
+};
+
 function buildGoalCard(goal,showActions){
  const card=el("article",undefined,"goal-card"),head=el("div",undefined,"goal-head"),percent=Math.min(100,goal.saved/goal.target*100);
  head.append(el("span",goal.name),el("span",Math.round(goal.saved/goal.target*100)+"%"));
