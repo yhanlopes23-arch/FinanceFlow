@@ -37,3 +37,16 @@ test("sugestões de categorias dependem da descrição e são confirmadas manual
  assert.match(js,/\$\("tx-category"\)\.value=suggestion\.category/);
  assert.match(js,/\$\("tx-description"\)\.addEventListener\("input"/);
 });
+
+test("edição usa o mesmo formulário, preserva versão e oferece ação no histórico e vencimentos",()=>{
+ const html=read("index.html"),code=read("src/app.mjs");
+ assert.match(html,/id="tx-save"/);
+ assert.match(html,/id="tx-edit-hint"/);
+ assert.match(code,/function openEditTransaction\(id\)/);
+ assert.match(code,/edit\.onclick=\(\)=>openEditTransaction\(t\.id\)/);
+ assert.match(code,/editTransaction\(s,editingId,changes,editingRevision\)/);
+ assert.match(code,/form\.elements\.amount\.value=/);
+ assert.match(code,/form\.elements\.date\.value=tx\.date/);
+ assert.match(code,/tx\.revision\?\?0/);
+ assert.match(code,/function describeAudit\(event\)/);
+});
