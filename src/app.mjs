@@ -1,16 +1,26 @@
+import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
 import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
 try {const raw=localStorage.getItem(KEY);state=raw?validateState(JSON.parse(raw)):initial();} catch(e){state=initial();alert("Não foi possível ler os dados salvos. Faça uma cópia do armazenamento antes de registrar novos lançamentos. "+e.message);}
+function ensureCategories(data){data.categories=[...new Set([...data.categories,...SMART_CATEGORIES])];}
+ensureCategories(state);
 const monthDefault=today().slice(0,7);$("month").value=monthDefault;
 function say(message,error=false){const n=$("notice");n.textContent=message;n.classList.toggle("error",error);}
 function commit(fn){const clone=structuredClone(state);try{fn(clone);validateState(clone);localStorage.setItem(KEY,JSON.stringify(clone));state=clone;render();say("Alterações salvas neste navegador.");}catch(e){say(e.message,true);}}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node;}
 function opt(select,value,label){const o=new Option(label,value);select.add(o);}
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta removida";}
-function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){const s=$(id),v=s.value;s.replaceChildren();state.categories.forEach(c=>opt(s,c,c));if([...s.options].some(o=>o.value===v))s.value=v;}}
+function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){
+ const s=$(id),v=s.value;s.replaceChildren();
+ if(id==="tx-category")opt(s,"","Escolha uma categoria");
+ state.categories.forEach(c=>opt(s,c,c));
+ if([...s.options].some(o=>o.value===v))s.value=v;
+ else if(id==="tx-category")s.value="";
+}}
 function render(){
+ ensureCategories(state);
  fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);const pendingElement=$("pending");if(pendingElement)pendingElement.textContent=sum.pending;
  const month=$("month").value||monthDefault;
  const forecast=monthlyForecast(state,month);
@@ -92,11 +102,51 @@ function buildGoalCard(goal,showActions){
 }
 
 function dialog(id){const d=$(id);d.showModal();d.querySelector("input:not([type=hidden])")?.focus();}
+
+function showCategorySuggestion(){
+ const area=$("category-suggestion"),type=$("tx-type").value,description=$("tx-description").value;
+ area.replaceChildren();
+ if(type==="transfer"||description.trim().length<3){area.hidden=true;return;}
+ area.hidden=false;
+ const suggested=suggestCategories(description,type,state.categories,state.transactions);
+ const heading=el("strong","Sugestões de categoria (análise local)","suggestion-heading");
+ area.append(heading);
+ if(!suggested.length){
+  area.append(el("p","Nenhuma correspondência confiável. Selecione a categoria manualmente.","suggestion-empty"));
+  return;
+ }
+ const group=el("div",undefined,"suggestion-buttons");
+ for(const suggestion of suggested){
+  const button=el("button",undefined,"suggestion-button");
+  button.type="button";
+  button.title=suggestion.reason;
+  button.append(el("span",suggestion.category),el("small",suggestion.confidence+" • "+suggestion.reason));
+  button.addEventListener("click",()=>{
+   $("tx-category").value=suggestion.category;
+   area.querySelectorAll(".suggestion-button").forEach(b=>b.classList.remove("chosen"));
+   button.classList.add("chosen");
+   const message=area.querySelector(".suggestion-feedback");
+   if(message)message.textContent="Categoria selecionada: "+suggestion.category+". Você pode alterar manualmente.";
+   else area.append(el("p","Categoria selecionada: "+suggestion.category+". Você pode alterar manualmente.","suggestion-feedback"));
+  });
+  group.append(button);
+ }
+ area.append(group);
+ area.append(el("p","Sugestões, não classificações automáticas. A descrição não é enviada a servidores externos.","suggestion-note"));
+}
+$("tx-description").addEventListener("input",showCategorySuggestion);
+$("tx-category").addEventListener("change",()=>{
+ const feedback=$("category-suggestion").querySelector(".suggestion-feedback");
+ if(feedback)feedback.textContent="Categoria escolhida manualmente: "+$("tx-category").value;
+ $("category-suggestion").querySelectorAll(".suggestion-button").forEach(b=>b.classList.remove("chosen"));
+});
 function syncType(){
  const type=$("tx-type").value,status=$("tx-form").elements.status.value,transfer=type==="transfer";
  $("tx-to-wrap").hidden=!transfer;$("tx-category-wrap").hidden=transfer;
+ $("tx-category").required=!transfer;
  $("tx-date-label").textContent=dateFieldLabel(type,status);
  $("tx-date-hint").textContent=dateFieldHint(type,status);
+ showCategorySuggestion();
 }
 $("tx-type").addEventListener("change",syncType);$("tx-form").elements.status.addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>{if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);$("tx-form").reset();$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");};
 $("open-account").onclick=()=>{$("account-form").reset();dialog("account-dialog");};
