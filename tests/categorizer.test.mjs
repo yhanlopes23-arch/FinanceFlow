@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {SMART_CATEGORIES,normalizeDescription,suggestCategories} from "../src/categorizer.mjs";
 const suggest=(description,type="expense",history=[],categories=SMART_CATEGORIES)=>suggestCategories(description,type,categories,history);
-const first=(description,type="expense",history=[])=>suggest(description,type,history)[0]?.category;
+const first=(description,type="expense",history=[],categories=SMART_CATEGORIES)=>suggest(description,type,history,categories)[0]?.category;
 test("descrições comuns levam a categorias plausíveis sem rede",()=>{
  assert.equal(first("Supermercado Central"),"Alimentação");
  assert.equal(first("Farmácia Drogasil"),"Saúde");
