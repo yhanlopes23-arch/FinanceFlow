@@ -1,5 +1,5 @@
 import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,partialPaid,remainingDue,overdueExpenses,proportionalPaymentPlan,applyProportionalPayments} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -39,9 +39,10 @@ function render(){
  if(!entries.length)bars.append(el("p","Nenhuma despesa prevista para este mês.","empty"));
  else {const top=entries[0][1];for(const [name,value] of entries){const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel"),a=el("span",name),b=el("strong",money(value)),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=(value/top*100)+"%";track.append(fill);lab.append(a,b);row.append(lab,track);bars.append(row);}}
  renderDashboard(month,forecast,totals,entries);
+ renderSettlement();
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
- for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
+ for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");const info=paymentDateStatus(t);stateCell.append(el("span",info.label,"pill "+info.kind));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.type==="expense"&&t.status==="pending"?remainingDue(t):t.amount));if(t.type==="expense"&&partialPaid(t)>0&&t.status==="pending")amount.append(el("small"," • pago "+money(partialPaid(t)),"muted"));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
  if(t.status==="pending"){const b=el("button","Liquidar","secondary rowaction");b.onclick=()=>commit(s=>settle(s,t.id));action.append(b);}
  const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);action.append(edit);
  const rev=el("button","Estornar","danger rowaction");rev.onclick=()=>{if(confirm("Estornar este lançamento? A operação ficará registrada na auditoria."))commit(s=>reverse(s,t.id));};action.append(rev);tr.append(action);body.append(tr);}
@@ -70,9 +71,10 @@ function renderDashboard(month,forecast,totals,entries){
   day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
   const details=el("div");
   const info=paymentDateStatus(t);details.append(el("span",info.label,"pill "+info.kind),el("div",t.description||t.category,"due-name"),el("div",(t.type==="income"?"Receber em ":"Pagar até ")+t.date.split("-").reverse().join("/")+" • "+t.category+" • "+accountName(t.accountId),"due-sub"));
-  const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
+  const amount=el("span",(t.type==="expense"?"−":"+")+money(t.type==="expense"?remainingDue(t):t.amount),"due-amount");
+  if(t.type==="expense"&&partialPaid(t)>0)amount.append(el("small","Já pago: "+money(partialPaid(t)),"muted"));
   const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
-  btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
+  btn.addEventListener("click",()=>{if(confirm("Confirmar quitação do saldo restante de "+money(remainingDue(t))+"? Registro local, sem transferência bancária."))commit(s=>settle(s,t.id));});
   const edit=el("button","Editar","secondary rowaction");edit.type="button";edit.onclick=()=>openEditTransaction(t.id);
   const actions=el("div",undefined,"due-actions");actions.append(btn,edit);
   row.append(day,details,amount,actions);return row;
