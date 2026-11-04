@@ -70,3 +70,6 @@ export function contributeGoal(s,id,amount){
  if(!goal||!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger(goal.saved+amount))throw Error("Aporte inválido.");
  goal.saved+=amount;record(s,"goal.progress",goal.id);return goal;
 }
+
+// Compatibilidade com a interface que usa criação simples de metas.
+export function addGoal(s,name,target){return createGoal(s,{name,target});}
