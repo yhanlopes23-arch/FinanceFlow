@@ -56,3 +56,17 @@ O CSV é **somente exportação**, não importação. O registro de estorno é u
 - [Política de segurança](SECURITY.md)
 
 O objetivo é evoluir para autenticação real, controles de isolamento por organização, razão financeiro reconciliável, importações validadas, cartões, relatórios e integrações — sem declarar módulos futuros como concluídos.
+
+## Publicação no Cloudflare
+
+O arquivo `wrangler.toml` aponta para `[assets] directory = "./public"`. Por isso, **tudo que aparecer no site hospedado deve existir dentro de `public/`**. Os arquivos `index.html`, `styles.css` e `src/` na raiz também permanecem como fonte de desenvolvimento.
+
+Para publicar manualmente com o Wrangler, autentique-se no Cloudflare e, na raiz do repositório, execute:
+
+```bash
+npx wrangler deploy
+```
+
+O Worker continua identificado como `controle-financeiro-360` no `wrangler.toml` para **não trocar o endereço de produção inadvertidamente**. Renomear o projeto no GitHub não renomeia o Worker da Cloudflare.
+
+**Importante:** o workflow `.github/workflows/check.yml` apenas valida os testes e a sintaxe; ele **não implanta** o aplicativo. Se não houver uma integração de publicação automática já configurada no painel Cloudflare, é necessário fazer o deploy manualmente ou configurar um pipeline com credenciais protegidas. Não há garantia de publicação ao executar apenas os testes.
