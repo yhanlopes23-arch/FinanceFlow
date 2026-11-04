@@ -53,6 +53,44 @@ export function addTransaction(s,p) {
   const tx={id:uid(),type,amount,date,status,accountId:p.accountId,toAccountId:type==="transfer"?p.toAccountId:null,category:type==="transfer"?"Transferência":String(p.category||"Outros").slice(0,80),description:String(p.description||"").trim().slice(0,180),createdAt:new Date().toISOString(),reversedBy:null};
   s.transactions.unshift(tx);record(s,"transaction.create",tx.id);return tx;
 }
+/**
+ * Edita um lançamento sem recriar seu identificador.
+ * A alteração é atômica quando executada sobre a cópia em commit(),
+ * deixa o antes/depois na auditoria e impede editar registros estornados.
+ * revision permite rejeitar formulários abertos sobre versão antiga.
+ */
+export function editTransaction(s,id,changes,expectedRevision=null) {
+ const tx=s.transactions.find(t=>t.id===id);
+ if(!tx)throw Error("Lançamento não encontrado.");
+ if(tx.reversedBy)throw Error("Não é possível editar um lançamento estornado.");
+ if(!changes||typeof changes!=="object")throw Error("Dados de edição inválidos.");
+ const revision=tx.revision??0;
+ if(expectedRevision!==null && expectedRevision!==revision)throw Error("Este lançamento foi alterado. Reabra a edição para evitar sobrescrever mudanças.");
+ const editable=["type","amount","date","status","accountId","toAccountId","category","description"];
+ const before=Object.fromEntries(editable.map(k=>[k,tx[k]??null]));
+ const next={
+  type:changes.type, amount:changes.amount, date:changes.date, status:changes.status,
+  accountId:changes.accountId,
+  toAccountId:changes.type==="transfer"?changes.toAccountId:null,
+  category:changes.type==="transfer"?"Transferência":String(changes.category??"").trim(),
+  description:String(changes.description??"").trim()
+ };
+ if(!["income","expense","transfer"].includes(next.type)
+    ||!Number.isSafeInteger(next.amount)||next.amount<=0
+    ||typeof next.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(next.date)
+    ||!["paid","pending"].includes(next.status)
+    ||!s.accounts.some(a=>a.id===next.accountId)
+    ||(next.type==="transfer"&&(!s.accounts.some(a=>a.id===next.toAccountId)||next.toAccountId===next.accountId))
+    ||!next.description||next.description.length>180
+    ||!next.category||next.category.length>80)throw Error("Confira valor, data, conta, descrição e categoria.");
+ const modified=editable.some(key=>before[key]!==next[key]);
+ if(!modified)return tx;
+ Object.assign(tx,next);
+ tx.revision=revision+1;
+ tx.updatedAt=new Date().toISOString();
+ record(s,"transaction.edit",JSON.stringify({id,revision:tx.revision,before,after:next}));
+ return tx;
+}
 export function reverse(s,id){const t=s.transactions.find(t=>t.id===id);if(!t||t.reversedBy)throw Error("Lançamento já estornado ou inexistente.");t.reversedBy=uid();record(s,"transaction.reverse",id);return t;}
 export function settle(s,id){const t=s.transactions.find(t=>t.id===id);if(!t||t.reversedBy||t.status!=="pending")throw Error("Pendente não encontrado.");t.status="paid";record(s,"transaction.settle",id);}
 export function monthRows(s,month) {return s.transactions.filter(t=>!t.reversedBy&&t.date.startsWith(month));}
