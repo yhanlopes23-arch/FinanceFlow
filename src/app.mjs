@@ -134,11 +134,4 @@ function updateNavigation(){
 }
 window.addEventListener("hashchange",updateNavigation);
 updateNavigation();
-render();};
-const navLinks=[...document.querySelectorAll(".bottom-item, .sidebar .nav")];
-function updateNavigation(){
- const hash=location.hash||"#dashboard";
- navLinks.forEach(link=>link.classList.toggle("active",link.getAttribute("href")===hash));
-}
-window.addEventListener("hashchange",updateNavigation);updateNavigation();
 render();
