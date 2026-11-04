@@ -1,4 +1,4 @@
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -11,12 +11,13 @@ function opt(select,value,label){const o=new Option(label,value);select.add(o);}
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name??"Conta removida";}
 function fillOptions(){for(const id of ["tx-account","tx-to"]){const s=$(id),v=s.value;s.replaceChildren();state.accounts.forEach(a=>opt(s,a.id,a.name));if([...s.options].some(o=>o.value===v))s.value=v;}for(const id of ["tx-category","budget-category"]){const s=$(id),v=s.value;s.replaceChildren();state.categories.forEach(c=>opt(s,c,c));if([...s.options].some(o=>o.value===v))s.value=v;}}
 function render(){
- fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);$("income").textContent=money(sum.income);$("expense").textContent=money(sum.expense);$("pending").textContent=sum.pending;
+ fillOptions();const sum=summary(state);$("balance").textContent=money(sum.balance);$("pending").textContent=sum.pending;
  const month=$("month").value||monthDefault, rows=monthRows(state,month).filter(t=>t.status==="paid");const inc=rows.filter(t=>t.type==="income").reduce((n,t)=>n+t.amount,0),exp=rows.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0),net=inc-exp;
- const result=$("month-result");result.textContent=money(net);result.className="month-result "+(net>=0?"positive":"negative");
+ $("income").textContent=money(inc);$("expense").textContent=money(exp);const result=$("month-result");result.textContent=money(net);result.className=net>=0?"positive":"negative";
  const totals=categoryTotals(state,month),entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
  if(!entries.length)bars.append(el("p","Nenhuma despesa liquidada neste mês.","empty"));
  else {const top=entries[0][1];for(const [name,value] of entries){const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel"),a=el("span",name),b=el("strong",money(value)),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=(value/top*100)+"%";track.append(fill);lab.append(a,b);row.append(lab,track);bars.append(row);}}
+ renderDashboard(month,inc,exp,net,totals,entries);
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
  if(!visible.length){const tr=el("tr"),td=el("td","Nenhum lançamento corresponde aos filtros.","empty");td.colSpan=6;tr.append(td);body.append(tr);}
  for(const t of visible){const tr=el("tr");tr.append(el("td",t.date.split("-").reverse().join("/")));const title=el("td");title.append(el("strong",t.description||({income:"Receita",expense:"Despesa",transfer:"Transferência"}[t.type])),el("div",t.category,"muted"));tr.append(title,el("td",accountName(t.accountId)+(t.type==="transfer"?" → "+accountName(t.toAccountId):"")));const stateCell=el("td");stateCell.append(el("span",t.status==="paid"?"Liquidado":"Pendente","pill "+t.status));tr.append(stateCell);const amount=el("td",(t.type==="expense"?"−":t.type==="income"?"+":"⇄ ")+money(t.amount));amount.className=t.type==="expense"?"negative":t.type==="income"?"positive":"";tr.append(amount);const action=el("td");
@@ -27,6 +28,52 @@ function render(){
  for(const [key,limit] of monthBudgets){const category=key.split("|").slice(1).join("|"),spent=totals[category]||0,row=el("div",undefined,"budgetrow"),lab=el("div",undefined,"barlabel"),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");lab.append(el("span",category),el("strong",money(spent)+" / "+money(limit)));fill.style.width=(limit?Math.min(100,spent/limit*100):100)+"%";if(spent>limit)fill.style.background="#ff869a";track.append(fill);row.append(lab,track);budgets.append(row);}
  const audit=$("audit");audit.replaceChildren();if(!state.audit.length)audit.append(el("p","Sem eventos."));for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+event.details));
 }
+
+const colors=["#12df9a","#a456f5","#298df2","#ffab2a","#a5b8cc","#f46e9a"];
+let balanceHidden=false;
+function renderDashboard(month,inc,exp,net,totals,entries){
+ const total=entries.reduce((n,e)=>n+e[1],0);
+ $("donut-total").textContent=money(total);
+ if(total){
+  let from=0;const stops=[];
+  entries.forEach(([_,value],i)=>{const to=from+value/total*100;stops.push(colors[i%colors.length]+" "+from+"% "+to+"%");from=to;});
+  $("donut").style.background="conic-gradient("+stops.join(",")+")";
+ } else $("donut").style.background="conic-gradient(#263b56 0 100%)";
+ $("donut").setAttribute("aria-label",total?"Despesas por categoria: "+entries.map(([n,v])=>n+" "+money(v)).join(", "):"Sem despesas liquidadas no mês");
+ const pending=state.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.type!=="transfer").sort((a,b)=>a.date.localeCompare(b.date));
+ const upcoming=$("upcoming");upcoming.replaceChildren();
+ if(!pending.length)upcoming.append(el("p","Nenhum vencimento pendente cadastrado.","empty"));
+ for(const t of pending.slice(0,4)){
+  const row=el("div",undefined,"due-row"),day=el("div",undefined,"due-date");
+  const [y,m,d]=t.date.split("-").map(Number);
+  day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
+  const details=el("div");details.append(el("span",t.type==="expense"?"A PAGAR":"A RECEBER","pill pending"),el("div",t.description||t.category,"due-name"),el("div",t.category+" • "+accountName(t.accountId),"due-sub"));
+  const amount=el("span",(t.type==="expense"?"−":"+")+money(t.amount),"due-amount");
+  const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");btn.addEventListener("click",()=>{if(confirm("Confirmar liquidação de "+money(t.amount)+"?"))commit(s=>settle(s,t.id));});
+  row.append(day,details,amount,btn);upcoming.append(row);
+ }
+ $("pending-caption").textContent=pending.length>4?"Mostrando 4 de "+pending.length+" pendências. Consulte o histórico para ver as demais.":"Data exibida: data prevista informada no lançamento.";
+ $("account-count").textContent="("+state.accounts.length+")";
+ const accounts=$("home-accounts");accounts.replaceChildren();
+ state.accounts.slice(0,4).forEach(acc=>{const row=el("div",undefined,"home-account"),ico=el("span","▤","bank-icon"),name=el("div",undefined,"account-title");name.append(el("strong",acc.name),el("small","Conta local"));row.append(ico,name,el("div",balanceHidden?"R$ ••••":money(balance(state,acc.id)),"amount"));accounts.append(row);});
+ const targets=$("home-goals"),list=$("goals-list");targets.replaceChildren();list.replaceChildren();
+ const goals=state.goals||[];if(!goals.length){targets.append(el("p","Nenhuma meta criada. Use Nova meta para começar.","empty"));list.append(el("p","Suas metas aparecerão aqui.","empty"));}
+ for(const goal of goals){targets.append(buildGoalCard(goal,false));list.append(buildGoalCard(goal,true));}
+ const report=$("monthly-report");report.replaceChildren();
+ for(const [label,value] of [["Receitas liquidadas",inc],["Despesas liquidadas",exp],["Resultado do mês",net],["Despesas pendentes (todas as datas)",pending.filter(t=>t.type==="expense").reduce((n,t)=>n+t.amount,0)]]){
+   const row=el("div",undefined,"barlabel");row.append(el("span",label),el("strong",money(value)));report.append(row);
+ }
+ $("balance").textContent=balanceHidden?"R$ ••••":money(summary(state).balance);
+}
+function buildGoalCard(goal,showActions){
+ const card=el("article",undefined,"goal-card"),head=el("div",undefined,"goal-head"),percent=Math.min(100,goal.saved/goal.target*100);
+ head.append(el("span",goal.name),el("span",Math.round(goal.saved/goal.target*100)+"%"));
+ card.append(head,el("div",money(goal.saved)+" de "+money(goal.target),"goal-meta"));
+ const track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=percent+"%";track.append(fill);card.append(track);
+ if(showActions){const actions=el("div",undefined,"goal-actions"),input=el("input");input.placeholder="Aporte (R$)";input.setAttribute("aria-label","Valor para a meta "+goal.name);input.inputMode="decimal";const button=el("button","Registrar aporte","secondary");button.onclick=()=>{try{commit(s=>contributeGoal(s,goal.id,parseMoney(input.value)));}catch(e){say(e.message,true);}};actions.append(input,button);card.append(actions);}
+ return card;
+}
+
 function dialog(id){const d=$(id);d.showModal();d.querySelector("input:not([type=hidden])")?.focus();}
 function syncType(){const transfer=$("tx-type").value==="transfer";$("tx-to-wrap").hidden=!transfer;$("tx-category-wrap").hidden=transfer;}
 $("tx-type").addEventListener("change",syncType);$("new-transaction").onclick=$("open-tx").onclick=()=>{if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);$("tx-form").reset();$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");};
@@ -42,4 +89,24 @@ function csvCell(value){return '"'+String(value??"").replaceAll('"','""').replac
 $("export-csv").onclick=()=>{const rows=[["ID","Tipo","Descrição","Categoria","Valor (BRL)","Data","Status","Conta origem","Conta destino","Estornado"],...state.transactions.map(t=>[t.id,t.type,t.description,t.category,(t.amount/100).toFixed(2).replace(".",","),t.date,t.status,accountName(t.accountId),t.toAccountId?accountName(t.toAccountId):"",t.reversedBy?"Sim":"Não"])];download("financeflow-lancamentos-"+today()+".csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");};
 $("import-json").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>5_000_000)throw Error("Backup maior que 5 MB.");const next=importData(await file.text());if(!confirm("Substituir TODOS os dados deste navegador pelo backup selecionado?"))return;localStorage.setItem(KEY,JSON.stringify(next));state=next;render();say("Backup restaurado.");}catch(err){say("Não foi possível restaurar: "+err.message,true);}finally{e.target.value="";}};
 $("clear-data").onclick=()=>{if(prompt('Digite APAGAR para excluir definitivamente os dados deste navegador:')!=="APAGAR")return;const fresh=initial();try{localStorage.setItem(KEY,JSON.stringify(fresh));state=fresh;render();say("Dados locais apagados.");}catch(e){say(e.message,true);}};
+
+$("toggle-balance").onclick=()=>{balanceHidden=!balanceHidden;render();};
+function openTx(type="expense"){
+ if(!state.accounts.length)return say("Cadastre uma conta primeiro.",true);
+ $("tx-form").reset();$("tx-type").value=type;$("tx-form").elements.date.value=today();syncType();dialog("tx-dialog");
+}
+$("new-transaction").onclick=$("open-tx").onclick=$("bottom-add").onclick=()=>openTx();
+document.querySelectorAll("[data-quick]").forEach(button=>button.addEventListener("click",()=>{
+ const kind=button.dataset.quick;
+ if(kind==="goal")dialog("goal-dialog");else openTx(kind);
+}));
+$("open-goal").onclick=()=>dialog("goal-dialog");
+$("goal-form").onsubmit=e=>{e.preventDefault();const f=e.currentTarget;try{let ok=false;commit(s=>{addGoal(s,f.elements.name.value,parseMoney(f.elements.target.value));ok=true;});if(ok&&$("notice").className!=="error")$("goal-dialog").close();}catch(err){say(err.message,true);}};
+$("all-pending").onclick=()=>{$("filter-status").value="pending";render();};
+const navLinks=[...document.querySelectorAll(".bottom-item, .sidebar .nav")];
+function updateNavigation(){
+ const hash=location.hash||"#dashboard";
+ navLinks.forEach(link=>link.classList.toggle("active",link.getAttribute("href")===hash));
+}
+window.addEventListener("hashchange",updateNavigation);updateNavigation();
 render();
