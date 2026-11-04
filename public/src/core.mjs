@@ -26,6 +26,7 @@ export function validateState(s) {
     txids.add(t.id);
   }
   for(const v of Object.values(s.budgets)) if(!Number.isSafeInteger(v)||v<0) throw Error("Orçamento inválido.");
+  if (s.goals !== undefined) {if(!Array.isArray(s.goals)) throw Error("Metas inválidas.");for(const g of s.goals){if(!g.id || typeof g.name!=="string" || g.name.length>80 || !Number.isSafeInteger(g.target) || g.target<=0 || !Number.isSafeInteger(g.saved) || g.saved<0 || (g.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(g.deadline)))throw Error("Meta inválida.");}}
   return s;
 }
 export function balance(s,accountId) {
@@ -58,15 +59,17 @@ export function categoryTotals(s,month){const out={};for(const t of monthRows(s,
 export function exportData(s){validateState(s);return JSON.stringify(s,null,2);}
 export function importData(raw){const s=validateState(JSON.parse(raw));return structuredClone(s);}
 
-export function addGoal(s,name,target){
-  if(!String(name).trim()||String(name).trim().length>80||!Number.isSafeInteger(target)||target<=0)throw Error("Informe nome e valor válido para a meta.");
-  s.goals ??=[];const goal={id:uid(),name:String(name).trim(),target,saved:0};s.goals.push(goal);record(s,"goal.create",goal.id);return goal;
+export function createGoal(s,{name,target,deadline=""}) {
+ name=String(name||"").trim();
+ if(!name||name.length>80||!Number.isSafeInteger(target)||target<=0||(deadline&&!/^\d{4}-\d{2}-\d{2}$/.test(deadline)))throw Error("Dados da meta inválidos.");
+ s.goals??=[];const goal={id:uid(),name,target,saved:0,deadline};
+ s.goals.push(goal);record(s,"goal.create",goal.id);return goal;
 }
 export function contributeGoal(s,id,amount){
-  if(!Number.isSafeInteger(amount)||amount<=0)throw Error("Aporte inválido.");
-  const goal=(s.goals||[]).find(g=>g.id===id);if(!goal)throw Error("Meta não encontrada.");
-  if(!Number.isSafeInteger(goal.saved+amount))throw Error("Valor muito alto.");
-  goal.saved+=amount;record(s,"goal.contribute",goal.id);
-  // É acompanhamento de meta, não movimentação bancária.
-  return goal;
+ const goal=(s.goals||[]).find(g=>g.id===id);
+ if(!goal||!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger(goal.saved+amount))throw Error("Aporte inválido.");
+ goal.saved+=amount;record(s,"goal.progress",goal.id);return goal;
 }
+
+// Compatibilidade com a interface que usa criação simples de metas.
+export function addGoal(s,name,target){return createGoal(s,{name,target});}
