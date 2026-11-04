@@ -73,3 +73,30 @@ export function contributeGoal(s,id,amount){
 
 // Compatibilidade com a interface que usa criação simples de metas.
 export function addGoal(s,name,target){return createGoal(s,{name,target});}
+
+/**
+ * Projeção do mês: inclui lançamentos liquidados e pendentes, sem duplicidade.
+ * Transferências internas não são receitas/despesas, e estornos são ignorados.
+ * Todas as quantias permanecem em centavos inteiros.
+ */
+export function monthlyForecast(s,month){
+ if(!/^\d{4}-\d{2}$/.test(month))throw Error("Mês de referência inválido.");
+ const rows=s.transactions.filter(t=>!t.reversedBy && t.date.startsWith(month) && t.type!=="transfer");
+ const totals={paidIncome:0,pendingIncome:0,paidExpense:0,pendingExpense:0};
+ const expenseCategories={};
+ for(const t of rows){
+  const key=(t.status==="paid"?"paid":"pending")+(t.type==="income"?"Income":"Expense");
+  totals[key]+=t.amount;
+  if(t.type==="expense")expenseCategories[t.category]=(expenseCategories[t.category]||0)+t.amount;
+ }
+ const expectedIncome=totals.paidIncome+totals.pendingIncome;
+ const expectedExpense=totals.paidExpense+totals.pendingExpense;
+ return {...totals,expectedIncome,expectedExpense,expectedResult:expectedIncome-expectedExpense,actualResult:totals.paidIncome-totals.paidExpense,expenseCategories};
+}
+/** Saldo atual + todas as pendências até o último dia do mês, inclusive atrasadas. */
+export function projectedBalance(s,month){
+ if(!/^\d{4}-\d{2}$/.test(month))throw Error("Mês de referência inválido.");
+ const balanceNow=summary(s).balance;
+ const pendingUntilMonth=s.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.date.slice(0,7)<=month);
+ return balanceNow+pendingUntilMonth.reduce((amount,t)=>amount+(t.type==="income"?t.amount:t.type==="expense"?-t.amount:0),0);
+}
