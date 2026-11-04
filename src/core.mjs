@@ -26,6 +26,7 @@ export function validateState(s) {
     txids.add(t.id);
   }
   for(const v of Object.values(s.budgets)) if(!Number.isSafeInteger(v)||v<0) throw Error("Orçamento inválido.");
+  if (s.goals !== undefined) {if(!Array.isArray(s.goals)) throw Error("Metas inválidas.");for(const g of s.goals){if(!g.id || typeof g.name!=="string" || g.name.length>80 || !Number.isSafeInteger(g.target) || g.target<=0 || !Number.isSafeInteger(g.saved) || g.saved<0 || (g.deadline && !/^\\d{4}-\\d{2}-\\d{2}$/.test(g.deadline)))throw Error("Meta inválida.");}}
   return s;
 }
 export function balance(s,accountId) {
@@ -69,4 +70,16 @@ export function contributeGoal(s,id,amount){
   goal.saved+=amount;record(s,"goal.contribute",goal.id);
   // É acompanhamento de meta, não movimentação bancária.
   return goal;
+}
+
+export function createGoal(s,{name,target,deadline=""}) {
+ name=String(name||"").trim();
+ if(!name||name.length>80||!Number.isSafeInteger(target)||target<=0||(deadline&&!/^\d{4}-\d{2}-\d{2}$/.test(deadline)))throw Error("Dados da meta inválidos.");
+ s.goals??=[];const goal={id:uid(),name,target,saved:0,deadline};
+ s.goals.push(goal);record(s,"goal.create",goal.id);return goal;
+}
+export function contributeGoal(s,id,amount){
+ const goal=(s.goals||[]).find(g=>g.id===id);
+ if(!goal||!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger(goal.saved+amount))throw Error("Aporte inválido.");
+ goal.saved+=amount;record(s,"goal.progress",goal.id);return goal;
 }
