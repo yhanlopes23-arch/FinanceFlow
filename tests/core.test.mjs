@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {initial,parseMoney,addAccount,addTransaction,balance,summary,reverse,settle,categoryTotals,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance} from "../src/core.mjs";
+import {initial,parseMoney,addAccount,addTransaction,balance,summary,reverse,settle,categoryTotals,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,today} from "../src/core.mjs";
 const add=(s,p)=>addTransaction(s,{date:"2026-11-04",status:"paid",category:"Alimentação",description:"Teste",...p});
 test("converte moeda brasileira exatamente",()=>{assert.equal(parseMoney("1.234,56"),123456);assert.equal(parseMoney("0,01"),1);assert.throws(()=>parseMoney("1,999"));assert.throws(()=>parseMoney("-2"));});
 test("transferência mantém saldo consolidado e não gera receita",()=>{const s=initial();s.accounts[0].opening=100000;const b=addAccount(s,"Poupança",30000);add(s,{type:"transfer",amount:20000,accountId:s.accounts[0].id,toAccountId:b.id});assert.equal(balance(s,s.accounts[0].id),80000);assert.equal(balance(s,b.id),50000);assert.equal(summary(s).balance,130000);assert.equal(summary(s).income,0);assert.equal(summary(s).expense,0);});
@@ -45,4 +45,18 @@ test("projeção exclui transferências e estornos e respeita o mês",()=>{
  assert.equal(projectedBalance(s,"2026-11"),0);
  assert.equal(projectedBalance(s,"2026-12"),6000);
  assert.throws(()=>monthlyForecast(s,"2026-15-01"));
+});
+
+test("vencimentos usam data limite e receitas usam data prevista ou efetiva",()=>{
+ assert.equal(dateFieldLabel("expense","pending"),"Vencimento (último dia para pagar)");
+ assert.equal(dateFieldLabel("income","pending"),"Previsão de recebimento");
+ assert.equal(dateFieldLabel("income","paid"),"Data do recebimento");
+ const exp={type:"expense",date:"2026-11-10",status:"pending",reversedBy:null};
+ assert.equal(paymentDateStatus(exp,"2026-11-10").label,"Último dia para pagar");
+ assert.equal(paymentDateStatus(exp,"2026-11-11").label,"Pagamento atrasado");
+ assert.equal(paymentDateStatus({...exp,status:"paid"},"2026-11-11").label,"Pago");
+ const inc={...exp,type:"income"};
+ assert.equal(paymentDateStatus(inc,"2026-11-10").label,"Receber hoje");
+ assert.equal(paymentDateStatus(inc,"2026-11-11").label,"Recebimento atrasado");
+ assert.match(today(),/^\d{4}-\d{2}-\d{2}$/);
 });
