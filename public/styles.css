@@ -183,3 +183,9 @@ body{background:var(--navy)}
 .pill.today{color:#ffdb8d;background:rgba(165,103,18,.18);border-color:rgba(240,170,70,.35)}
 .pill.success{color:#70f0be;background:rgba(22,119,92,.15);border-color:rgba(70,218,154,.27)}
 @media(max-width:480px){.suggestion-button{flex:1 1 120px}}
+
+/* Edição de lançamentos nas tabelas e na agenda */
+.due-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px}
+.due-actions .rowaction{white-space:nowrap}
+#tx-edit-hint{margin:0;padding:10px 12px;border-left:3px solid #57ddbc;border-radius:8px;background:rgba(18,70,68,.2)}
+@media(max-width:650px){.due-actions{justify-content:flex-start}}
