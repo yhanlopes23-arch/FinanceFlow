@@ -23,6 +23,7 @@ jobs:
         run: |
           node --test tests/*.test.mjs
           node --check src/categorizer.mjs
+          node --check src/chart.mjs
           node --check src/core.mjs
           node --check src/app.mjs
       - name: Garantir correspondência dos arquivos publicados
@@ -34,6 +35,7 @@ jobs:
           cmp src/app.mjs public/src/app.mjs
           cmp src/core.mjs public/src/core.mjs
           cmp src/categorizer.mjs public/src/categorizer.mjs
+          cmp src/chart.mjs public/src/chart.mjs
           grep -q 'financeflow-reference-v4' public/index.html
           grep -q 'settlement-apply' public/index.html
           grep -q 'bottom-main' public/index.html
