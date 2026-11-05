@@ -79,7 +79,7 @@ test("dashboard contém cartão funcional de quitação proporcional sem dados f
 test("página inicial segue ordem e composição do layout de referência V4",()=>{
  const html=read("index.html"),css=read("dashboard-v4.css"),app=read("src/app.mjs");
  assert.match(html,/data-layout="financeflow-reference-v4"/);
- assert.match(html,/dashboard-v4\.css\?v=reference-v4-20261104/);
+ assert.match(html,/dashboard-v4\.css\?v=chart-proportions-20261104/);
  const anchors=["hero-balance","forecast-grid","dashboard-mid","dashboard-panel","dashboard-bottom"];
  const indexes=anchors.map(c=>html.indexOf(c));
  assert.ok(indexes.every(n=>n>=0),"Falta bloco essencial do dashboard");
@@ -101,4 +101,19 @@ test("quitação proporcional mantém funcionalidade na aba Vencimentos, fora da
  assert.ok(start>=0&&end>start&&settlement>start&&settlement<end);
  assert.ok(!html.slice(html.indexOf('<section id="dashboard"'),start).includes('settlement-panel'));
  assert.match(app,/renderSettlement\(\)/);
+});
+
+test("gráfico usa fatias SVG proporcionais e não mantém camada antiga sobre a rosca",()=>{
+ const html=read("index.html"),app=read("src/app.mjs"),style=read("dashboard-v4.css"),chart=read("src/chart.mjs");
+ assert.match(html,/id="donut"/);
+ assert.match(html,/id="bars"/);
+ assert.match(app,/categoryBreakdown\(totals\)/);
+ assert.match(app,/document\.createElementNS\(ns,"svg"\)/);
+ assert.match(app,/document\.createElementNS\(ns,"circle"\)/);
+ assert.match(app,/const length=circumference\*entry\.proportion/);
+ assert.match(app,/entry\.percentageLabel/);
+ assert.match(style,/#donut::before/);
+ assert.match(style,/content:none!important/);
+ assert.match(style,/#donut \.donut-svg/);
+ assert.match(chart,/export function categoryBreakdown\(/);
 });
