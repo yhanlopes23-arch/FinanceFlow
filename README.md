@@ -130,3 +130,18 @@ O cartão **Sugestão de quitação proporcional** identifica **todas as despesa
 Um pagamento parcial reduz imediatamente o saldo da conta pagadora e diminui o valor pendente da despesa original, mantendo a obrigação aberta até a quitação total. O valor já pago entra no realizado, e o valor restante permanece na previsão, sem contagem duplicada. O histórico de pagamentos fica dentro do lançamento para exportação JSON e a operação é documentada na auditoria local. Se o valor disponível for insuficiente para distribuir um centavo a cada despesa, algumas podem receber R$ 0,00 nessa sugestão, pois a menor unidade monetária é um centavo.
 
 **Importante:** não há integração com credores ou bancos. Confirme por conta própria se pagamentos parciais são aceitos e como juros, multas, encargos e acordos serão tratados. O cálculo usa somente o principal cadastrado no FinanceFlow e não substitui orientação financeira ou jurídica.
+
+
+## Publicar a interface atualizada — Glassy V3
+
+**Compilação/testes não publicam o site.** A publicação é feita pelo workflow `.github/workflows/deploy.yml` (**Publicar FinanceFlow no Cloudflare**) em cada push na `main`, ou manualmente na aba Actions. Esse workflow executa testes, confere que os arquivos da raiz e de `public/` são idênticos, verifica as credenciais e só então executa `wrangler deploy`.
+
+**Configuração necessária uma única vez:** no GitHub abra **Settings → Secrets and variables → Actions**, e crie dois *repository secrets*:
+- `CLOUDFLARE_API_TOKEN`: token de API com permissões para publicar Workers na conta.
+- `CLOUDFLARE_ACCOUNT_ID`: ID da conta Cloudflare onde está o Worker.
+
+Depois abra **Actions → Publicar FinanceFlow no Cloudflare → Run workflow**, se necessário. Se as credenciais estiverem ausentes, o workflow **falhará com uma mensagem explícita**, evitando confundir testes bem-sucedidos com publicação. O nome do Worker continua `controle-financeiro-360`, conforme `wrangler.toml`, para manter o destino de produção.
+
+**Como reconhecer a versão correta:** o HTML contém `data-layout="financeflow-glassy-v3"`, o rodapé exibe `Interface 2026.11` e o deploy Cloudflare envia o cabeçalho HTTP `X-FinanceFlow-Layout: glassy-v3`. O `public/_headers` solicita revalidação de HTML, CSS e JavaScript, e o HTML usa URLs de assets versionadas, reduzindo problemas de cache.
+
+**Se você estiver usando o Preview do Google AI Studio ou outro ambiente independente:** ele não lê automaticamente os arquivos deste repositório. Abra o **endereço do Worker realmente publicado** após o deploy ou configure o outro ambiente para carregar esse código. Uma atualização de GitHub não altera uma cópia independente em um Preview.
