@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 210" role="img" aria-label="Montanhas ao pôr do sol">
+<defs><linearGradient id="sky" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#41618c"/><stop offset=".5" stop-color="#2c4c77"/><stop offset="1" stop-color="#132b50"/></linearGradient>
+<linearGradient id="far" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9eb1c9"/><stop offset="1" stop-color="#3e608a"/></linearGradient>
+<linearGradient id="near" x1=".3" y1="0" x2=".7" y2="1"><stop stop-color="#4e719b"/><stop offset=".8" stop-color="#1d355a"/><stop offset="1" stop-color="#102440"/></linearGradient>
+<radialGradient id="light"><stop stop-color="#d7deee" stop-opacity=".38"/><stop offset="1" stop-color="#bad1ea" stop-opacity="0"/></radialGradient></defs>
+<rect width="340" height="210" fill="url(#sky)"/><circle cx="243" cy="62" r="89" fill="url(#light)"/>
+<path d="M0 178 66 98 113 142 175 49 248 142 293 77 340 133V210H0Z" fill="url(#far)"/>
+<path d="m137 96 38-47 42 54-36-14-13 13-14-14Z" fill="#dbe5ee" opacity=".94"/>
+<path d="m269 113 24-36 27 47-26-10-12 13Z" fill="#c0d2e7" opacity=".9"/>
+<path d="M0 199 68 123 107 158 177 90 256 183 306 136 340 170v40H0Z" fill="url(#near)"/>
+<path d="m139 126 38-36 36 45-33-18-13 13-11-11Z" fill="#edf2f5" opacity=".85"/>
+<path d="M0 192 47 160 102 184 143 151 221 194 283 163 340 183v27H0Z" fill="#142947" opacity=".85"/>
+<path d="M0 207 58 189 119 205 167 183 237 205 299 188 340 196v14H0Z" fill="#0b1e39"/>
+</svg>
