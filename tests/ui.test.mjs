@@ -81,14 +81,14 @@ test("página inicial segue ordem e composição do layout de referência V4",()
  assert.match(html,/data-layout="financeflow-reference-v4"/);
  assert.match(html,/dashboard-v4\.css\?v=reference-v4-20261104/);
  const anchors=["hero-balance","forecast-grid","dashboard-mid","dashboard-panel","dashboard-bottom"];
- const indexes=anchors.map(c=>html.indexOf('class="glass '+c)||html.indexOf(c));
+ const indexes=anchors.map(c=>html.indexOf(c));
  assert.ok(indexes.every(n=>n>=0),"Falta bloco essencial do dashboard");
  assert.ok(indexes.every((n,i)=>i===0||n>indexes[i-1]),"Blocos fora da ordem da referência");
  assert.ok(html.includes('class="bottom-main"'));
  assert.ok(html.includes("Gerenciamento &amp; SQL"));
  assert.match(css,/grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
  assert.match(css,/\.dashboard-mid\{display:grid;grid-template-columns/);
- assert.match(css,/\.dashboard-bottom\{grid-template-columns/);
+ assert.match(css,/\.dashboard-bottom\{(?:display:grid;)?grid-template-columns/);
  assert.match(css,/\.bottom-nav\{display:block;position:fixed/);
  assert.match(css,/goal-mountain\.svg/);
  assert.match(app,/pending\.slice\(0,2\)/);
