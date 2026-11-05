@@ -79,7 +79,7 @@ test("dashboard contém cartão funcional de quitação proporcional sem dados f
 test("página inicial segue ordem e composição do layout de referência V4",()=>{
  const html=read("index.html"),css=read("dashboard-v4.css"),app=read("src/app.mjs");
  assert.match(html,/data-layout="financeflow-reference-v4"/);
- assert.match(html,/dashboard-v4\.css\?v=chart-proportions-20261104/);
+ assert.match(html,/dashboard-v4\.css\?v=reserve-in-day-20261104/);
  const anchors=["hero-balance","forecast-grid","dashboard-mid","dashboard-panel","dashboard-bottom"];
  const indexes=anchors.map(c=>html.indexOf(c));
  assert.ok(indexes.every(n=>n>=0),"Falta bloco essencial do dashboard");
