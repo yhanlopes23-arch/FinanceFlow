@@ -1,6 +1,6 @@
 import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
 import {categoryBreakdown} from "./chart.mjs";
-import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,partialPaid,remainingDue,overdueExpenses,proportionalPaymentPlan,applyProportionalPayments} from "./core.mjs";
+import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,partialPaid,remainingDue,overdueExpenses,upcomingExpenseReserve,proportionalPaymentPlan,applyProportionalPayments} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
 let state;
@@ -174,44 +174,73 @@ function renderSettlement(){
  accountSelect.replaceChildren();
  for(const account of state.accounts)opt(accountSelect,account.id,account.name+" • "+money(balance(state,account.id)));
  if(state.accounts.some(a=>a.id===previous))accountSelect.value=previous;
- else {
-  const best=[...state.accounts].sort((a,b)=>balance(state,b.id)-balance(state,a.id))[0];
+ else{
+  const best=[...state.accounts].sort((a,b)=>
+   upcomingExpenseReserve(state,b.id).spendable-upcomingExpenseReserve(state,a.id).spendable)[0];
   if(best)accountSelect.value=best.id;
  }
- const chosen=accountSelect.value;
- const available=chosen?Math.max(0,balance(state,chosen)):0;
- const overdue=overdueExpenses(state),outstanding=overdue.reduce((total,t)=>total+remainingDue(t),0);
- $("settlement-available").textContent=money(available);
- if(!settlementBudgetEdited)budgetInput.value=new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.min(available,outstanding)/100);
- const text=budgetInput.value.trim();
- let requested=0,error="";
- try{requested=text?parseMoney(text):0;}catch(e){error=text==="0,00"||text==="0"?"":e.message;}
+ const accountId=accountSelect.value;
  const apply=$("settlement-apply");
  apply.disabled=true;suggestedPaymentPlan=null;out.replaceChildren();
- if(!overdue.length){
-  out.append(el("p","Nenhuma despesa vencida e em aberto. Os pagamentos em dia continuam na aba Vencimentos.","settlement-empty"));
+ const list=$("settlement-upcoming");
+ list.replaceChildren();
+ if(!accountId){
+  $("settlement-available").textContent=money(0);
+  $("settlement-reserved").textContent=money(0);
+  $("settlement-free").textContent=money(0);
+  $("settlement-full-count").textContent="0 contas";
   $("settlement-total").textContent="Total sugerido: "+money(0);
-  $("settlement-explain").textContent="Somente despesas com vencimento anterior à data de hoje entram no rateio.";
+  out.append(el("p","Cadastre uma conta bancária para obter a sugestão.","settlement-empty"));
   return;
  }
- if(available===0)error="A conta selecionada não tem saldo disponível. Escolha outra conta para calcular o rateio.";
- if(!error&&requested>available)error="Valor maior que o saldo disponível na conta. Diminua o valor para continuar.";
+ const reserve=upcomingExpenseReserve(state,accountId);
+ const overdue=overdueExpenses(state);
+ const outstanding=overdue.reduce((total,t)=>total+remainingDue(t),0);
+ $("settlement-available").textContent=money(reserve.available);
+ $("settlement-reserved").textContent=money(reserve.reserved);
+ $("settlement-free").textContent=money(reserve.spendable);
+ $("settlement-protected-description").textContent=reserve.rows.length+" despesa(s) em dia • total "+money(reserve.required)+" • reserva virtual";
+ const warning=$("settlement-shortfall");
+ warning.hidden=reserve.shortfall===0;
+ warning.textContent=reserve.shortfall?"Saldo insuficiente para proteger todas as contas em dia: faltam "+money(reserve.shortfall)+". Nenhum valor será sugerido para despesas vencidas.":"";
+ if(!reserve.rows.length)list.append(el("p","Não há despesas em dia pendentes associadas a esta conta.","muted"));
+ for(const bill of reserve.rows){
+  const row=el("div",undefined,"settlement-reserve-row");
+  row.append(el("span",bill.description||"Despesa prevista"),el("small",bill.date.split("-").reverse().join("/")+" • "+money(bill.outstanding)));
+  list.append(row);
+ }
+ if(!settlementBudgetEdited)budgetInput.value=new Intl.NumberFormat("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})
+  .format(Math.min(reserve.spendable,outstanding)/100);
+ let requested=0,error="";
+ const input=budgetInput.value.trim();
+ try{requested=input?parseMoney(input):0;}catch(e){if(input!=="0,00"&&input!=="0"&&input!=="0.00"&&input!=="")error=e.message;}
+ if(!error&&requested>reserve.spendable)error="Valor acima da sobra disponível após reservar as contas em dia ("+money(reserve.spendable)+").";
  if(!error){
-  try{suggestedPaymentPlan=proportionalPaymentPlan(state,chosen,requested);}catch(e){error=e.message;}
+  try{suggestedPaymentPlan=proportionalPaymentPlan(state,accountId,requested);}
+  catch(e){error=e.message;}
  }
  if(error)out.append(el("p",error,"settlement-warning"));
  const plan=suggestedPaymentPlan;
- const rows=plan?.rows?.length?plan.rows:overdue.map(t=>({id:t.id,description:t.description,date:t.date,outstanding:remainingDue(t),amount:0}));
- for(const item of rows){
-  const row=el("div",undefined,"settlement-item"),heading=el("div",undefined,"settlement-item-name");
-  heading.append(el("span","◷","settlement-clock"),el("strong",item.description||"Despesa sem descrição"));
-  const open=el("span","Em aberto: "+money(item.outstanding),"settlement-item-open");
-  const allocated=el("span","Sugerido: "+money(item.amount),"settlement-item-allocated");
-  row.append(heading,open,allocated);out.append(row);
+ $("settlement-full-count").textContent=(plan?.fullySettled||0)+" conta(s)";
+ const rows=plan?.rows||overdue.map(t=>({id:t.id,description:t.description,date:t.date,outstanding:remainingDue(t),amount:0,kind:"unpaid"}));
+ if(!overdue.length)out.append(el("p","Não há despesas vencidas em aberto. A reserva das contas em dia continua sendo apenas uma previsão.","settlement-empty"));
+ else{
+  for(const item of rows){
+   const row=el("div",undefined,"settlement-item"),heading=el("div",undefined,"settlement-item-name");
+   heading.append(el("span",item.kind==="full"?"✓":"◷","settlement-clock"),el("strong",item.description||"Despesa sem descrição"));
+   const open=el("span","Em aberto: "+money(item.outstanding),"settlement-item-open");
+   const allocated=el("span",(item.kind==="full"?"QUITAR: ":item.amount?"PARCIAL: ":"SUGERIDO: ")+money(item.amount),"settlement-item-allocated");
+   if(item.kind==="full")row.classList.add("settlement-paid-full");
+   row.append(heading,open,allocated);out.append(row);
+  }
  }
  const amount=plan?.distributed||0;
- $("settlement-total").textContent="Total sugerido: "+money(amount);
- $("settlement-explain").textContent=outstanding===0?"Sem dívidas vencidas.":"Rateio proporcional sobre "+money(outstanding)+" em despesas vencidas, em centavos exatos. O saldo restante continua pendente.";
+ $("settlement-total").textContent="Total sugerido para vencidas: "+money(amount);
+ const message=reserve.shortfall
+  ?"Prioridade absoluta: faltam recursos para cobrir as contas ainda em dia. O saldo disponível não será destinado a dívidas vencidas."
+  :reserve.spendable===0?"Todo o saldo disponível está comprometido com despesas em dia."
+  :"As contas em dia foram protegidas virtualmente. A sugestão quita "+(plan?.fullySettled||0)+" dívida(s) vencida(s) e distribui o que restar entre as demais, conforme o saldo em aberto.";
+ $("settlement-explain").textContent=message;
  apply.disabled=Boolean(error)||!plan||!amount;
 }
 $("settlement-account").addEventListener("change",()=>{settlementBudgetEdited=false;renderSettlement();});
@@ -220,12 +249,21 @@ $("settlement-apply").onclick=()=>{
  const accountId=$("settlement-account").value,plan=suggestedPaymentPlan;
  if(!plan||!plan.distributed)return say("Não há sugestão válida para aplicar.",true);
  const count=plan.rows.filter(r=>r.amount>0).length;
- const message="Registrar localmente "+money(plan.distributed)+" distribuídos proporcionalmente entre "+count+" despesa(s) vencida(s)?"+String.fromCharCode(10)+String.fromCharCode(10)+
- "Os pagamentos parciais abatem o saldo em aberto. Nenhuma transferência, Pix ou boleto é pago automaticamente.";
+ const full=plan.fullySettled;
+ const message="Registrar localmente "+money(plan.distributed)+" para "+count+" despesa(s) vencida(s), quitando "+full+" integralmente?"+String.fromCharCode(10)+String.fromCharCode(10)+
+ "Serão mantidos "+money(plan.reserved)+" reservados virtualmente para despesas em dia. Essa reserva NÃO registra pagamentos futuros."+String.fromCharCode(10)+String.fromCharCode(10)+
+ "Nenhum Pix, boleto ou transferência bancária será executado.";
  if(!confirm(message))return;
- if(commit(s=>applyProportionalPayments(s,accountId,plan.distributed))){
+ const snapshot=plan.rows.map(({id,amount})=>id+":"+amount).join("|");
+ if(commit(s=>{
+  const current=proportionalPaymentPlan(s,accountId,plan.distributed);
+  if(current.reserved!==plan.reserved||current.spendable!==plan.spendable||
+     current.rows.map(({id,amount})=>id+":"+amount).join("|")!==snapshot)
+   throw Error("Os saldos ou as contas mudaram. Confira novamente a sugestão antes de registrar.");
+  applyProportionalPayments(s,accountId,plan.distributed);
+ })){
   settlementBudgetEdited=false;renderSettlement();
-  say("Quitação proporcional registrada em "+count+" despesas. Consulte Vencimentos e Histórico para os saldos restantes.");
+  say("Registradas "+full+" quitação(ões) integral(is) e valores parciais nas demais despesas vencidas. As contas em dia permanecem apenas reservadas.");
  }
 };
 
