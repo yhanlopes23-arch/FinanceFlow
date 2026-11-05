@@ -172,6 +172,12 @@ function buildGoalCard(goal,showActions){
 }
 
 function describeAudit(event){
+ if(event.action==="expenses.proportional-payment"){
+  try{
+    const p=JSON.parse(event.details);
+    return "Quitação proporcional: "+money(p.total)+" da conta "+accountName(p.accountId)+" em "+p.allocations.length+" despesa(s).";
+  }catch{return "Quitação proporcional registrada.";}
+ }
  if(event.action!=="transaction.edit")return String(event.details??"");
  try{
   const change=JSON.parse(event.details),labels={type:"Tipo",amount:"Valor",date:"Data",status:"Situação",accountId:"Conta origem",toAccountId:"Conta destino",category:"Categoria",description:"Descrição"};
@@ -271,7 +277,16 @@ for(const id of ["month","search","filter-type","filter-status"])$(id).addEventL
 function download(name,content,mime){const blob=new Blob([content],{type:mime});const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 $("export-json").onclick=()=>download("financeflow-backup-"+today()+".json",exportData(state),"application/json");
 function csvCell(value){return '"'+String(value??"").replaceAll('"','""').replace(/^[=+\-@]/,"'$&")+'"';}
-$("export-csv").onclick=()=>{const rows=[["ID","Tipo","Descrição","Categoria","Valor (BRL)","Data de recebimento ou vencimento","Status","Conta origem","Conta destino","Estornado"],...state.transactions.map(t=>[t.id,t.type,t.description,t.category,(t.amount/100).toFixed(2).replace(".",","),t.date,t.status,accountName(t.accountId),t.toAccountId?accountName(t.toAccountId):"",t.reversedBy?"Sim":"Não"])];download("financeflow-lancamentos-"+today()+".csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");};
+$("export-csv").onclick=()=>{
+ const amountCell=v=>(v/100).toFixed(2).replace(".",",");
+ const rows=[["ID","Tipo","Descrição","Categoria","Valor original (BRL)","Pago acumulado (BRL)","Saldo em aberto (BRL)","Data de recebimento ou vencimento","Status","Conta origem","Conta destino","Histórico de pagamentos parciais","Estornado"],
+ ...state.transactions.map(t=>{
+  const paid=t.type==="expense"?(t.status==="paid"?t.amount:partialPaid(t)):(t.status==="paid"?t.amount:0);
+  const remaining=t.type==="expense"?remainingDue(t):(t.type==="income"&&t.status==="pending"?t.amount:0);
+  return [t.id,t.type,t.description,t.category,amountCell(t.amount),amountCell(paid),amountCell(remaining),t.date,t.status,accountName(t.accountId),t.toAccountId?accountName(t.toAccountId):"",(t.payments||[]).map(p=>p.date+" "+amountCell(p.amount)+" "+accountName(p.accountId)).join(" | "),t.reversedBy?"Sim":"Não"];
+ })];
+ download("financeflow-lancamentos-"+today()+".csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");
+};
 $("import-json").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>5_000_000)throw Error("Backup maior que 5 MB.");const next=importData(await file.text());if(!confirm("Substituir TODOS os dados deste navegador pelo backup selecionado?"))return;localStorage.setItem(KEY,JSON.stringify(next));state=next;render();say("Backup restaurado.");}catch(err){say("Não foi possível restaurar: "+err.message,true);}finally{e.target.value="";}};
 $("clear-data").onclick=()=>{if(prompt('Digite APAGAR para excluir definitivamente os dados deste navegador:')!=="APAGAR")return;const fresh=initial();try{localStorage.setItem(KEY,JSON.stringify(fresh));state=fresh;render();say("Dados locais apagados.");}catch(e){say(e.message,true);}};
 
