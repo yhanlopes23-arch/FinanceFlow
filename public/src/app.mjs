@@ -25,6 +25,13 @@ function render(){
  const month=$("month").value||monthDefault;
  const forecast=monthlyForecast(state,month);
  const inc=forecast.paidIncome,exp=forecast.paidExpense,net=forecast.actualResult;
+ const badge=$("balance-change");
+ if(badge){
+  badge.textContent=balanceHidden?"Valores ocultos":(net>=0?"↗ Resultado efetivo do mês: +":"↘ Resultado efetivo do mês: −")+money(Math.abs(net));
+  badge.classList.toggle("balance-trend-negative",net<0);
+ }
+ const chartPeriod=document.querySelector("#dashboard .chart-period");
+ if(chartPeriod)chartPeriod.textContent="Este mês • Total: "+money(forecast.expectedExpense);
  $("income").textContent=money(forecast.expectedIncome);
  $("income-paid").textContent=money(forecast.paidIncome);
  $("income-pending").textContent=money(forecast.pendingIncome);
@@ -75,12 +82,12 @@ function renderDashboard(month,forecast,totals,entries){
  } else $("donut").style.background="conic-gradient(#263b56 0 100%)";
  $("donut").setAttribute("aria-label",total?"Despesas por categoria: "+entries.map(([n,v])=>n+" "+money(v)).join(", "):"Sem despesas previstas no mês");
  const pending=state.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.type!=="transfer").sort((a,b)=>a.date.localeCompare(b.date));
- function buildDueRow(t){
-  const row=el("div",undefined,"due-row"),day=el("div",undefined,"due-date");
+ function buildDueRow(t,home=false){
+  const row=el("div",undefined,home?"due-row home-due":"due-row"),day=el("div",undefined,"due-date");
   const [y,m,d]=t.date.split("-").map(Number);
   day.append(el("small",new Intl.DateTimeFormat("pt-BR",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,d))).replace(".","").toUpperCase()),el("strong",String(d).padStart(2,"0")));
   const details=el("div");
-  const info=paymentDateStatus(t);details.append(el("span",info.label,"pill "+info.kind),el("div",t.description||t.category,"due-name"),el("div",(t.type==="income"?"Receber em ":"Pagar até ")+t.date.split("-").reverse().join("/")+" • "+t.category+" • "+accountName(t.accountId),"due-sub"));
+  const info=paymentDateStatus(t);details.append(el("span",home?(t.type==="expense"?"A PAGAR":"A RECEBER"):info.label,"pill "+info.kind),el("div",t.description||t.category,"due-name"),el("div",(t.type==="income"?"Receber em ":"Pagar até ")+t.date.split("-").reverse().join("/")+" • "+t.category+" • "+accountName(t.accountId),"due-sub"));
   const amount=el("span",(t.type==="expense"?"−":"+")+money(t.type==="expense"?remainingDue(t):t.amount),"due-amount");
   if(t.type==="expense"&&partialPaid(t)>0)amount.append(el("small","Já pago: "+money(partialPaid(t)),"muted"));
   const btn=el("button",t.type==="expense"?"Pagar":"Receber","secondary rowaction");
@@ -92,16 +99,26 @@ function renderDashboard(month,forecast,totals,entries){
  const upcoming=$("upcoming"),agenda=$("all-upcoming");
  upcoming.replaceChildren();agenda.replaceChildren();
  if(!pending.length){upcoming.append(el("p","Nenhum vencimento pendente cadastrado.","empty"));agenda.append(el("p","Nenhuma receita a receber ou despesa a pagar.","empty"));}
- for(const t of pending.slice(0,4))upcoming.append(buildDueRow(t));
+ for(const t of pending.slice(0,2))upcoming.append(buildDueRow(t,true));
  for(const t of pending)agenda.append(buildDueRow(t));
- $("pending-caption").textContent=pending.length>4?"Mostrando 4 de "+pending.length+" pendências. Abra Vencimentos para consultar todas.":"Data exibida: data prevista informada no lançamento.";
+ $("pending-caption").textContent=pending.length>2?"Mostrando 2 de "+pending.length+" pendências. Abra Vencimentos para consultar todas.":"Data exibida: data prevista informada no lançamento.";
  $("agenda-caption").textContent=pending.length+" pendência(s), ordenadas por data. Vencimentos atrasados permanecem na lista até serem liquidados ou estornados.";
  $("account-count").textContent="("+state.accounts.length+")";
  const accounts=$("home-accounts");accounts.replaceChildren();
- state.accounts.slice(0,4).forEach(acc=>{const row=el("div",undefined,"home-account"),ico=el("span","▤","bank-icon"),name=el("div",undefined,"account-title");name.append(el("strong",acc.name),el("small","Conta local"));row.append(ico,name,el("div",balanceHidden?"R$ ••••":money(balance(state,acc.id)),"amount"));accounts.append(row);});
+ state.accounts.slice(0,3).forEach(acc=>{
+  const row=el("div",undefined,"home-account"),lower=acc.name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const ico=el("span"),name=el("div",undefined,"account-title");
+  let label="▥",bankClass="";
+  if(lower.includes("itau")){label="Itaú";bankClass="bank-itau";}
+  else if(lower.includes("nubank")||lower.includes("nu conta")){label="nu";bankClass="bank-nubank";}
+  else if(lower.includes("pix")||lower.includes("principal")){label="Pix";bankClass="bank-pix";}
+  ico.className="bank-icon "+bankClass;ico.textContent=label;
+  name.append(el("strong",acc.name),el("small","Conta corrente"));
+  row.append(ico,name,el("div",balanceHidden?"R$ ••••":money(balance(state,acc.id)),"amount"));accounts.append(row);
+ });
  const targets=$("home-goals"),list=$("goals-list");targets.replaceChildren();list.replaceChildren();
  const goals=state.goals||[];if(!goals.length){targets.append(el("p","Nenhuma meta criada. Use Nova meta para começar.","empty"));list.append(el("p","Suas metas aparecerão aqui.","empty"));}
- for(const goal of goals){targets.append(buildGoalCard(goal,false));list.append(buildGoalCard(goal,true));}
+ for(const [index,goal] of goals.entries()){if(index===0)targets.append(buildGoalCard(goal,false));list.append(buildGoalCard(goal,true));}
  const report=$("monthly-report");report.replaceChildren();
  for(const [label,value] of [["Receitas previstas no mês (liquidadas + pendentes)",forecast.expectedIncome],["Receitas recebidas",forecast.paidIncome],["Receitas a receber",forecast.pendingIncome],["Despesas previstas no mês (liquidadas + pendentes)",forecast.expectedExpense],["Despesas pagas",forecast.paidExpense],["Despesas a pagar",forecast.pendingExpense],["Resultado efetivo do mês",forecast.actualResult],["Resultado previsto do mês",forecast.expectedResult],["Saldo projetado até o fim do mês (pendências vencidas incluídas)",projectedBalance(state,month)]]){
    const row=el("div",undefined,"barlabel");row.append(el("span",label),el("strong",balanceHidden?"R$ ••••":money(value)));report.append(row);
@@ -318,7 +335,7 @@ $("new-due").onclick=()=>openTx("expense","pending");
 const pages=[...document.querySelectorAll(".main > section[data-page]")];
 const allowed=new Set(pages.map(page=>page.id));
 const navLinks=[...document.querySelectorAll(".bottom-item, .bottom-secondary a, .sidebar .nav")];
-const pageTitles={dashboard:["Olá! 👋","Aqui está um resumo das suas finanças."],agenda:["Vencimentos","Receitas e despesas previstas, ainda não liquidadas."],movimentos:["Movimentações","Consulte e gerencie seus lançamentos."],contas:["Contas","Saldos e contas financeiras."],metas:["Metas","Acompanhe seus objetivos."],planejamento:["Orçamentos","Planeje seus limites por categoria."],relatorios:["Relatórios","Compare o previsto e o realizado."],cartoes:["Cartões","Módulo de cartões em desenvolvimento."],dados:["Dados e segurança","Exportação, restauração e privacidade."]};
+const pageTitles={dashboard:["Olá, Yhan 👋","Aqui está um resumo das suas finanças."],agenda:["Vencimentos","Receitas e despesas previstas, ainda não liquidadas."],movimentos:["Movimentações","Consulte e gerencie seus lançamentos."],contas:["Contas","Saldos e contas financeiras."],metas:["Metas","Acompanhe seus objetivos."],planejamento:["Orçamentos","Planeje seus limites por categoria."],relatorios:["Relatórios","Compare o previsto e o realizado."],cartoes:["Cartões","Módulo de cartões em desenvolvimento."],dados:["Dados e segurança","Exportação, restauração e privacidade."]};
 function updateNavigation(){
  const requested=(location.hash||"#dashboard").slice(1);
  const selected=requested==="vencimentos"?"agenda":allowed.has(requested)?requested:"dashboard";
