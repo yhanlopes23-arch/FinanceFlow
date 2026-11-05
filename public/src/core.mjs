@@ -213,37 +213,82 @@ export function overdueExpenses(s,reference=today()){
  .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
 }
 /**
- * Distribui recursos entre TODAS as despesas vencidas segundo seus saldos em aberto.
- * Utiliza BigInt para manter centavos exatos e o método dos maiores restos
- * para distribuir o centavo residual, sem ultrapassar qualquer dívida.
+ * Reserva primeiro os valores ainda em dia (vencimento hoje ou futuro).
+ * Só considera despesas pendentes, não estornadas, da conta escolhida.
+ * A reserva é uma simulação, NÃO registra pagamentos nas contas em dia.
+ */
+export function upcomingExpenseReserve(s,accountId,reference=today()){
+ if(!s.accounts.some(a=>a.id===accountId))throw Error("Selecione uma conta válida.");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(reference))throw Error("Data de referência inválida.");
+ const rows=s.transactions.filter(t=>
+  t.type==="expense"&&t.status==="pending"&&!t.reversedBy
+  &&t.accountId===accountId&&t.date>=reference&&remainingDue(t)>0)
+  .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
+  .map(t=>({id:t.id,description:t.description,date:t.date,outstanding:remainingDue(t)}));
+ const required=rows.reduce((n,row)=>n+row.outstanding,0);
+ if(!Number.isSafeInteger(required))throw Error("Total das despesas em dia excede o limite permitido.");
+ const available=Math.max(0,balance(s,accountId));
+ const reserved=Math.min(required,available);
+ return {accountId,available,required,reserved,shortfall:required-reserved,spendable:Math.max(0,available-required),rows};
+}
+
+/**
+ * Ordem financeira:
+ * 1. Protege o dinheiro necessário às despesas ainda em dia da conta.
+ * 2. Com a sobra, quita integralmente o maior número de despesas vencidas,
+ *    começando pelos menores saldos em aberto (desempate por vencimento).
+ * 3. Rateia a sobra, proporcionalmente ao saldo de cada dívida não quitada.
+ *    Os centavos são distribuídos pelo método dos maiores restos.
+ *
+ * Não utiliza receitas futuras não liquidadas nem executa pagamentos bancários.
  */
 export function proportionalPaymentPlan(s,accountId,budget,reference=today()){
- if(!s.accounts.some(a=>a.id===accountId))throw Error("Selecione uma conta válida.");
  if(!Number.isSafeInteger(budget)||budget<0)throw Error("Valor disponível inválido.");
- const available=Math.max(0,balance(s,accountId));
- if(budget>available)throw Error("Valor informado excede o saldo da conta selecionada.");
+ const reserve=upcomingExpenseReserve(s,accountId,reference);
+ const {available,required,reserved,shortfall,spendable}=reserve;
+ if(budget>spendable)throw Error("Valor informado excede a sobra após reservar as despesas em dia.");
  const debts=overdueExpenses(s,reference);
  const outstanding=debts.reduce((n,t)=>n+remainingDue(t),0);
  if(!Number.isSafeInteger(outstanding))throw Error("Dívidas excedem o limite de cálculo.");
  const distributed=Math.min(budget,outstanding);
- if(!outstanding||!distributed)return {accountId,available,outstanding,distributed:0,rows:[]};
- const total=BigInt(outstanding),cents=BigInt(distributed);
- let rows=debts.map(t=>{
-  const due=remainingDue(t),product=cents*BigInt(due);
-  const base=Number(product/total);
-  const remainder=product%total;
-  return {id:t.id,description:t.description,date:t.date,category:t.category,outstanding:due,amount:base,remainder};
- });
- let leftovers=distributed-rows.reduce((n,r)=>n+r.amount,0);
- const order=[...rows].sort((a,b)=>{
-  if(a.remainder>b.remainder)return -1;
-  if(a.remainder<b.remainder)return 1;
-  return a.date.localeCompare(b.date)||a.id.localeCompare(b.id);
- });
- for(const row of order){if(!leftovers)break;if(row.amount<row.outstanding){row.amount++;leftovers--;}}
- if(leftovers!==0)throw Error("Não foi possível distribuir os centavos com precisão.");
- rows=rows.map(({remainder,...row})=>row);
- return {accountId,available,outstanding,distributed,rows};
+ const rows=debts.map(t=>({id:t.id,description:t.description,date:t.date,category:t.category,
+  outstanding:remainingDue(t),amount:0,kind:"unpaid"}));
+ if(!distributed||!outstanding)return {
+  accountId,available,protected:required,reserved,shortfall,spendable,
+  outstanding,distributed:0,fullySettled:0,rows,upcoming:reserve.rows
+ };
+ const byCost=[...rows].sort((a,b)=>a.outstanding-b.outstanding||a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+ let leftover=distributed,fullySettled=0;
+ for(const row of byCost){
+  if(row.outstanding>leftover)break;
+  row.amount=row.outstanding;row.kind="full";leftover-=row.amount;fullySettled++;
+ }
+ const remaining=rows.filter(row=>row.kind!=="full");
+ if(leftover&&remaining.length){
+  const total=remaining.reduce((n,row)=>n+row.outstanding,0);
+  const denominator=BigInt(total),budgetCents=BigInt(leftover);
+  const residues=[];
+  for(const row of remaining){
+   const product=budgetCents*BigInt(row.outstanding);
+   row.amount=Number(product/denominator);
+   row.kind=row.amount>0?"partial":"unpaid";
+   residues.push({row,remainder:product%denominator});
+  }
+  let pennies=leftover-remaining.reduce((n,row)=>n+row.amount,0);
+  residues.sort((a,b)=>a.remainder>b.remainder?-1:a.remainder<b.remainder?1:
+   a.row.date.localeCompare(b.row.date)||a.row.id.localeCompare(b.row.id));
+  for(const {row}of residues){
+   if(!pennies)break;
+   if(row.amount<row.outstanding){row.amount++;row.kind="partial";pennies--;}
+  }
+  if(pennies!==0)throw Error("Não foi possível distribuir os centavos com precisão.");
+ }
+ rows.sort((a,b)=>(a.kind==="full"?0:a.kind==="partial"?1:2)-
+                     (b.kind==="full"?0:b.kind==="partial"?1:2)
+    ||a.outstanding-b.outstanding||a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+ if(rows.reduce((n,row)=>n+row.amount,0)!==distributed)throw Error("Distribuição inconsistente.");
+ return {accountId,available,protected:required,reserved,shortfall,spendable,
+  outstanding,distributed,fullySettled,rows,upcoming:reserve.rows};
 }
 /** Registra pagamento local parcial/total, sem executar transferência bancária. */
 export function applyProportionalPayments(s,accountId,budget,reference=today()){
@@ -260,6 +305,6 @@ export function applyProportionalPayments(s,accountId,budget,reference=today()){
   tx.revision=(tx.revision??0)+1;
   if(remainingDue(tx)===0)tx.status="paid";
  }
- record(s,"expenses.proportional-payment",JSON.stringify({accountId,date:reference,total:plan.distributed,allocations:plan.rows.filter(r=>r.amount).map(({id,amount})=>({id,amount}))}));
+ record(s,"expenses.proportional-payment",JSON.stringify({accountId,date:reference,protected:plan.protected,reserved:plan.reserved,shortfall:plan.shortfall,total:plan.distributed,fullySettled:plan.fullySettled,allocations:plan.rows.filter(r=>r.amount).map(({id,amount,kind})=>({id,amount,kind}))}));
  return plan;
 }
