@@ -36,8 +36,18 @@ function render(){
  $("forecast-balance").textContent=balanceHidden?"R$ ••••":money(projectedBalance(state,month));
  const totals=forecast.expenseCategories, paidTotals=categoryTotals(state,month);
  const entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
- if(!entries.length)bars.append(el("p","Nenhuma despesa prevista para este mês.","empty"));
- else {const top=entries[0][1];for(const [name,value] of entries){const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel"),a=el("span",name),b=el("strong",money(value)),track=el("div",undefined,"bartrack"),fill=el("div",undefined,"barfill");fill.style.width=(value/top*100)+"%";track.append(fill);lab.append(a,b);row.append(lab,track);bars.append(row);}}
+ const categorySum=entries.reduce((n,row)=>n+row[1],0);
+ if(!entries.length)bars.append(el("p","Sem despesas previstas neste mês.","empty"));
+ else{
+  for(const [index,[name,value]]of entries.slice(0,6).entries()){
+   const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel");
+   const item=el("span"),dot=el("i");
+   dot.style.background=colors[index%colors.length];
+   item.append(dot,document.createTextNode(name));
+   lab.append(item,el("strong",(100*value/categorySum).toLocaleString("pt-BR",{maximumFractionDigits:0})+"%"));
+   row.append(lab);bars.append(row);
+  }
+ }
  renderDashboard(month,forecast,totals,entries);
  renderSettlement();
  const q=$("search").value.toLocaleLowerCase("pt-BR"),type=$("filter-type").value,status=$("filter-status").value,body=$("transactions");body.replaceChildren();const visible=state.transactions.filter(t=>!t.reversedBy&&(!type||t.type===type)&&(!status||t.status===status)&&(!q||[t.description,t.category,accountName(t.accountId)].some(v=>v.toLocaleLowerCase("pt-BR").includes(q))));
