@@ -145,3 +145,16 @@ Depois abra **Actions → Publicar FinanceFlow no Cloudflare → Run workflow**,
 **Como reconhecer a versão correta:** o HTML contém `data-layout="financeflow-glassy-v3"`, o rodapé exibe `Interface 2026.11` e o deploy Cloudflare envia o cabeçalho HTTP `X-FinanceFlow-Layout: glassy-v3`. O `public/_headers` solicita revalidação de HTML, CSS e JavaScript, e o HTML usa URLs de assets versionadas, reduzindo problemas de cache.
 
 **Se você estiver usando o Preview do Google AI Studio ou outro ambiente independente:** ele não lê automaticamente os arquivos deste repositório. Abra o **endereço do Worker realmente publicado** após o deploy ou configure o outro ambiente para carregar esse código. Uma atualização de GitHub não altera uma cópia independente em um Preview.
+
+
+## Reprodução da imagem de referência — Reference V4
+
+A tela **Início** foi reconstruída para corresponder à organização do print de referência: barra de marca FinanceFlow com sino e avatar genérico (sem fotografia pessoal inventada), saudação, saldo total com curva verde, três cartões (receitas do mês, despesas do mês, economia), gráfico de categorias ao lado de quatro atalhos, dois próximos vencimentos, contas bancárias e uma meta destacados lado a lado no celular, e menu inferior de cinco ícones com segunda linha de abas. Uma paisagem SVG local foi adicionada ao cartão de metas.
+
+O dashboard usa **exclusivamente dados cadastrados no próprio aplicativo**. Os valores fictícios da imagem de referência (saldo, bancos, faturas e metas) não são adicionados aos dados. Os totais de receitas e despesas exibidos nas três caixas incluem os lançamentos pendentes; a separação entre previsto e efetivo continua disponível nos **Relatórios** (onde também está o seletor do mês de referência).
+
+A **Sugestão de quitação proporcional** permanece funcional, mas foi deslocada para **Vencimentos**, pois não está na imagem solicitada. As demais abas não foram removidas.
+
+Arquivos desta versão: `index.html`, `dashboard-v4.css`, `assets/goal-mountain.svg`, `src/app.mjs`, com espelhos idênticos na pasta `public/` de publicação. O workflow de deploy verifica essa correspondência antes do Wrangler.
+
+**Atenção:** commitar no GitHub não publica o site automaticamente se `CLOUDFLARE_API_TOKEN` ou `CLOUDFLARE_ACCOUNT_ID` estiverem ausentes. Verifique a execução **Publicar FinanceFlow no Cloudflare** em GitHub Actions antes de esperar que um Preview externo ou o Worker mostre o novo layout. O Preview do Google AI Studio, se estiver sendo usado, é uma aplicação independente.
