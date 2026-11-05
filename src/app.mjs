@@ -48,7 +48,6 @@ function render(){
  $("forecast-balance").textContent=balanceHidden?"R$ ••••":money(projectedBalance(state,month));
  const totals=forecast.expenseCategories, paidTotals=categoryTotals(state,month);
  const entries=categoryBreakdown(totals),bars=$("bars");bars.replaceChildren();
- const chartSum=entries.reduce((sum,row)=>sum+row.amount,0);
  if(!entries.length){
   bars.append(el("p","Sem despesas previstas neste período. Se necessário, altere o mês em Relatórios.","empty chart-empty"));
  } else {
@@ -78,7 +77,6 @@ function render(){
 for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+describeAudit(event)));
 }
 
-const colors=["#12df9a","#a456f5","#298df2","#ffab2a","#a5b8cc","#f46e9a"];
 let balanceHidden=false;
 function renderDashboard(month,forecast,totals,entries){
  const total=entries.reduce((sum,row)=>sum+row.amount,0);
