@@ -120,12 +120,15 @@ Nas abas **Movimentações** e **Vencimentos**, selecione **Editar** para abrir 
 
 O dashboard usa o tema Glassy da referência: cartões azul-marinho translúcidos, verde para receitas, rosa para despesas, gráfico circular, atalhos, próximos vencimentos, contas, metas e navegação inferior no celular. **Todos os valores vêm dos dados locais; não há números fictícios.**
 
-O cartão **Sugestão de quitação proporcional** identifica **todas as despesas em aberto cuja data de vencimento é anterior ao dia atual**. O próprio dia do vencimento não conta como atraso. Para simular:
+Na aba **Vencimentos**, o cartão **Sugestão de quitação inteligente** usa o saldo efetivo da conta selecionada nesta ordem:
 
-1. Selecione a conta que fornecerá os recursos. O saldo disponível dessa conta, e não o saldo projetado, limita a sugestão.
-2. Ajuste o valor que pretende distribuir. O aplicativo sugere inicialmente até o limite do menor valor entre o saldo disponível da conta e o total das despesas vencidas.
-3. Confira o valor em aberto e o montante sugerido para cada dívida. O rateio segue a proporção do saldo restante de cada despesa, usando números inteiros em centavos e distribuição determinística dos centavos residuais.
-4. Clique em **Aplicar sugestão** e confirme. O aplicativo registra **pagamentos parciais ou totais apenas no armazenamento local**; não acessa contas bancárias, não paga boletos e não faz Pix.
+1. **Reservar as despesas em dia** — considere as despesas pendentes da conta escolhida, com vencimento hoje ou no futuro. A reserva utiliza o saldo em aberto (descontando pagamentos parciais já registrados). Inclui também os vencimentos de meses posteriores. Trata-se de **reserva virtual**: nenhum pagamento antecipado é registrado.
+2. **Calcular a sobra segura** — saldo disponível da conta menos o total das despesas em dia. O sistema jamais sugere usar nas atrasadas um valor necessário para proteger as despesas em dia. Se não houver saldo suficiente, informa o déficit e não sugere quitação de atrasadas. Receitas futuras pendentes não aumentam o saldo disponível.
+3. **Priorizar quitações integrais** — entre todas as despesas vencidas ainda pendentes (vencimento anterior ao dia atual), a sugestão quita integralmente o máximo possível, começando pelas dívidas com menor saldo em aberto, com desempate por data de vencimento.
+4. **Ratear a sobra** — após as quitações integrais, qualquer recurso ainda disponível é distribuído proporcionalmente ao valor em aberto das demais dívidas atrasadas, em centavos inteiros, usando os maiores restos para o arredondamento.
+5. **Conferir e registrar** — o campo de valor máximo vem preenchido com a sobra segura, mas pode ser reduzido. O botão **Registrar quitação sugerida** pede confirmação e grava apenas os pagamentos de despesas vencidas. A reserva das despesas em dia permanece uma simulação e não altera lançamentos.
+
+Os valores informados são calculados sobre a **conta bancária selecionada**. Despesas futuras vinculadas a outra conta não comprometem automaticamente o saldo desta. O sistema não presume transferências entre contas nem efetiva pagamentos externos.
 
 Um pagamento parcial reduz imediatamente o saldo da conta pagadora e diminui o valor pendente da despesa original, mantendo a obrigação aberta até a quitação total. O valor já pago entra no realizado, e o valor restante permanece na previsão, sem contagem duplicada. O histórico de pagamentos fica dentro do lançamento para exportação JSON e a operação é documentada na auditoria local. Se o valor disponível for insuficiente para distribuir um centavo a cada despesa, algumas podem receber R$ 0,00 nessa sugestão, pois a menor unidade monetária é um centavo.
 
@@ -153,7 +156,7 @@ A tela **Início** foi reconstruída para corresponder à organização do print
 
 O dashboard usa **exclusivamente dados cadastrados no próprio aplicativo**. Os valores fictícios da imagem de referência (saldo, bancos, faturas e metas) não são adicionados aos dados. Os totais de receitas e despesas exibidos nas três caixas incluem os lançamentos pendentes; a separação entre previsto e efetivo continua disponível nos **Relatórios** (onde também está o seletor do mês de referência).
 
-A **Sugestão de quitação proporcional** permanece funcional, mas foi deslocada para **Vencimentos**, pois não está na imagem solicitada. As demais abas não foram removidas.
+A **Sugestão de quitação inteligente** permanece funcional, mas foi deslocada para **Vencimentos**, pois não está na imagem solicitada. As demais abas não foram removidas.
 
 Arquivos desta versão: `index.html`, `dashboard-v4.css`, `assets/goal-mountain.svg`, `src/app.mjs`, com espelhos idênticos na pasta `public/` de publicação. O workflow de deploy verifica essa correspondência antes do Wrangler.
 
