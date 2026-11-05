@@ -1,4 +1,5 @@
 import {SMART_CATEGORIES,suggestCategories} from "./categorizer.mjs";
+import {categoryBreakdown} from "./chart.mjs";
 import {initial,validateState,parseMoney,money,today,balance,summary,addAccount,addTransaction,editTransaction,reverse,settle,monthRows,categoryTotals,record,exportData,importData,addGoal,contributeGoal,monthlyForecast,projectedBalance,dateFieldLabel,dateFieldHint,paymentDateStatus,partialPaid,remainingDue,overdueExpenses,proportionalPaymentPlan,applyProportionalPayments} from "./core.mjs";
 const KEY="financeflow-local-v1";
 const $=id=>document.getElementById(id);
@@ -31,7 +32,11 @@ function render(){
   badge.classList.toggle("balance-trend-negative",net<0);
  }
  const chartPeriod=document.querySelector("#dashboard .chart-period");
- if(chartPeriod)chartPeriod.textContent="Este mês • Total: "+money(forecast.expectedExpense);
+ if(chartPeriod){
+  const date=new Date(month+"-01T12:00:00Z");
+  const label=new Intl.DateTimeFormat("pt-BR",{month:"long",year:"numeric",timeZone:"UTC"}).format(date);
+  chartPeriod.textContent=label.charAt(0).toUpperCase()+label.slice(1)+" • Total: "+money(forecast.expectedExpense);
+ }
  $("income").textContent=money(forecast.expectedIncome);
  $("income-paid").textContent=money(forecast.paidIncome);
  $("income-pending").textContent=money(forecast.pendingIncome);
@@ -42,17 +47,19 @@ function render(){
  $("actual-result").textContent=money(forecast.actualResult);
  $("forecast-balance").textContent=balanceHidden?"R$ ••••":money(projectedBalance(state,month));
  const totals=forecast.expenseCategories, paidTotals=categoryTotals(state,month);
- const entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),bars=$("bars");bars.replaceChildren();
- const categorySum=entries.reduce((n,row)=>n+row[1],0);
- if(!entries.length)bars.append(el("p","Sem despesas previstas neste mês.","empty"));
- else{
-  for(const [index,[name,value]]of entries.slice(0,6).entries()){
+ const entries=categoryBreakdown(totals),bars=$("bars");bars.replaceChildren();
+ if(!entries.length){
+  bars.append(el("p","Sem despesas previstas neste período. Se necessário, altere o mês em Relatórios.","empty chart-empty"));
+ } else {
+  for(const entry of entries){
    const row=el("div",undefined,"barrow"),lab=el("div",undefined,"barlabel");
    const item=el("span"),dot=el("i");
-   dot.style.background=colors[index%colors.length];
-   item.append(dot,document.createTextNode(name));
-   lab.append(item,el("strong",(100*value/categorySum).toLocaleString("pt-BR",{maximumFractionDigits:0})+"%"));
-   row.append(lab);bars.append(row);
+   dot.style.backgroundColor=entry.color;
+   item.append(dot,document.createTextNode(entry.name));
+   const percent=el("strong",entry.percentageLabel);
+   const details=entry.name+" • "+money(entry.amount)+" • "+entry.percentageLabel+" das despesas previstas";
+   row.title=details;row.setAttribute("aria-label",details);
+   lab.append(item,percent);row.append(lab);bars.append(row);
   }
  }
  renderDashboard(month,forecast,totals,entries);
@@ -70,17 +77,50 @@ function render(){
 for(const event of state.audit.slice(0,60))audit.append(el("p",new Date(event.date).toLocaleString("pt-BR")+" — "+event.action+" — "+describeAudit(event)));
 }
 
-const colors=["#12df9a","#a456f5","#298df2","#ffab2a","#a5b8cc","#f46e9a"];
 let balanceHidden=false;
 function renderDashboard(month,forecast,totals,entries){
- const total=entries.reduce((n,e)=>n+e[1],0);
+ const total=entries.reduce((sum,row)=>sum+row.amount,0);
+ const donut=$("donut");
  $("donut-total").textContent=money(total);
- if(total){
-  let from=0;const stops=[];
-  entries.forEach(([_,value],i)=>{const to=from+value/total*100;stops.push(colors[i%colors.length]+" "+from+"% "+to+"%");from=to;});
-  $("donut").style.background="conic-gradient("+stops.join(",")+")";
- } else $("donut").style.background="conic-gradient(#263b56 0 100%)";
- $("donut").setAttribute("aria-label",total?"Despesas por categoria: "+entries.map(([n,v])=>n+" "+money(v)).join(", "):"Sem despesas previstas no mês");
+ donut.replaceChildren();
+ const ns="http://www.w3.org/2000/svg";
+ const svg=document.createElementNS(ns,"svg");
+ svg.setAttribute("viewBox","0 0 100 100");
+ svg.setAttribute("class","donut-svg");
+ svg.setAttribute("aria-hidden","true");
+ svg.setAttribute("focusable","false");
+ const ring=document.createElementNS(ns,"g");
+ ring.setAttribute("transform","rotate(-90 50 50)");
+ const radius=40,circumference=2*Math.PI*radius;
+ const background=document.createElementNS(ns,"circle");
+ for(const [key,value]of Object.entries({cx:"50",cy:"50",r:String(radius),fill:"none",stroke:"#2b3950","stroke-width":"20"}))background.setAttribute(key,value);
+ ring.append(background);
+ let offset=0;
+ for(const entry of entries){
+  const segment=document.createElementNS(ns,"circle");
+  const length=circumference*entry.proportion;
+  for(const [key,value]of Object.entries({
+   cx:"50",cy:"50",r:String(radius),fill:"none",stroke:entry.color,
+   "stroke-width":"20","stroke-dasharray":`${length.toFixed(5)} ${circumference.toFixed(5)}`,
+   "stroke-dashoffset":String(-offset)
+  }))segment.setAttribute(key,value);
+  const title=document.createElementNS(ns,"title");
+  title.textContent=entry.name+": "+money(entry.amount)+" ("+entry.percentageLabel+")";
+  segment.append(title);ring.append(segment);
+  offset+=length;
+ }
+ svg.append(ring);
+ const center=document.createElement("div");
+ center.className="donut-center";
+ const totalLabel=el("strong",money(total));
+ totalLabel.id="donut-total";
+ center.append(totalLabel,el("small","Total"));
+ donut.append(svg,center);
+ donut.style.background="transparent";
+ const label=total
+  ?"Gastos previstos: "+entries.map(e=>e.name+" "+e.percentageLabel+" ("+money(e.amount)+")").join("; ")+". Total "+money(total)
+  :"Sem despesas previstas neste mês";
+ donut.setAttribute("aria-label",label);
  const pending=state.transactions.filter(t=>!t.reversedBy&&t.status==="pending"&&t.type!=="transfer").sort((a,b)=>a.date.localeCompare(b.date));
  function buildDueRow(t,home=false){
   const row=el("div",undefined,home?"due-row home-due":"due-row"),day=el("div",undefined,"due-date");
