@@ -30,7 +30,7 @@ export function categoryBreakdown(totals,maxSlices=5){
  const priorities=grouped.map((x,i)=>({i,fraction:exact[i]-tenths[i],amount:x.amount}))
   .sort((a,b)=>b.fraction-a.fraction||b.amount-a.amount||a.i-b.i);
  for(let i=0;i<remainder;i++)tenths[priorities[i%priorities.length].i]++;
- const format=tenth=>tenth%10===0?`${tenth/10}%`:`${(tenth/10).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1})}%`;
+ const format=tenth=>tenth===0?"<0,1%":tenth%10===0?`${tenth/10}%`:`${(tenth/10).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1})}%`;
  return grouped.map((x,i)=>({
   ...x,
   color:x.name==="Outros"?"#b5c2d6":CHART_COLORS[i%CHART_COLORS.length],
