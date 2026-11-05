@@ -16,5 +16,6 @@ jobs:
       - name: Verificar sintaxe do app
         run: |
           node --check src/categorizer.mjs
+          node --check src/chart.mjs
           node --check src/core.mjs
           node --check src/app.mjs
