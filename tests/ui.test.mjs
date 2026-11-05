@@ -67,7 +67,7 @@ test("dashboard contém cartão funcional de quitação proporcional sem dados f
   assert.ok(html.includes('id="'+id+'"'),"Falta "+id);
  }
  assert.match(app,/function renderSettlement\(\)/);
- assert.match(app,/proportionalPaymentPlan\(state,chosen,requested\)/);
+ assert.match(app,/proportionalPaymentPlan\(state,accountId,requested\)/);
  assert.match(app,/applyProportionalPayments\(s,accountId,plan.distributed\)/);
  assert.match(app,/if\(!confirm\(message\)\)return/);
  assert.match(core,/export function partialPaid\(/);
@@ -116,4 +116,18 @@ test("gráfico usa fatias SVG proporcionais e não mantém camada antiga sobre a
  assert.match(style,/content:none!important/);
  assert.match(style,/#donut \.donut-svg/);
  assert.match(chart,/export function categoryBreakdown\(/);
+});
+
+test("quitação protege despesas em dia, mostra sobra e destaca contas quitáveis",()=>{
+ const html=read("index.html"),app=read("src/app.mjs"),core=read("src/core.mjs");
+ for(const id of ["settlement-reserved","settlement-free","settlement-full-count","settlement-shortfall","settlement-upcoming","settlement-protected-description"])
+  assert.ok(html.includes('id="'+id+'"'),"Falta componente "+id);
+ assert.match(app,/upcomingExpenseReserve\(state,accountId\)/);
+ assert.match(app,/Math\.min\(reserve\.spendable,outstanding\)/);
+ assert.match(app,/plan\.fullySettled/);
+ assert.match(app,/item\.kind==="full"/);
+ assert.match(app,/current\.reserved!==plan\.reserved/);
+ assert.match(core,/export function upcomingExpenseReserve\(/);
+ assert.match(core,/row\.outstanding>leftover/);
+ assert.match(core,/budgetCents\*BigInt\(row\.outstanding\)/);
 });
